@@ -10,6 +10,7 @@ import {
   CheckCircle,
   Clock
 } from "lucide-react";
+import { useVendor } from "@/contexts/VendorContext";
 
 interface Transaction {
   id: string;
@@ -114,10 +115,16 @@ const TransactionItem = ({ transaction }: { transaction: Transaction }) => {
 };
 
 const TransactionStream = () => {
+  const { isConnected } = useVendor();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLive, setIsLive] = useState(true);
 
   useEffect(() => {
+    if (!isConnected) {
+      setTransactions([]);
+      return;
+    }
+
     // Initialize with some transactions
     const initialTransactions = Array.from({ length: 8 }, () => generateMockTransaction())
       .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
@@ -132,7 +139,7 @@ const TransactionStream = () => {
     }, Math.random() * 3000 + 2000); // Random interval between 2-5 seconds
 
     return () => clearInterval(interval);
-  }, [isLive]);
+  }, [isLive, isConnected]);
 
   const liveTransactions = transactions.filter(t => t.status !== 'processing').length;
   const fraudCount = transactions.filter(t => t.status === 'fraud').length;
@@ -173,7 +180,7 @@ const TransactionStream = () => {
                 <div className="flex items-center justify-center h-32 text-muted-foreground">
                   <div className="text-center">
                     <Activity className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p>Waiting for transactions...</p>
+                    <p>{isConnected ? "Waiting for transactions..." : "Connect your website to see transactions"}</p>
                   </div>
                 </div>
               )}

@@ -8,6 +8,7 @@ import {
   TrendingUp, 
   AlertTriangle 
 } from "lucide-react";
+import { useVendor } from "@/contexts/VendorContext";
 
 interface MetricCardProps {
   title: string;
@@ -49,17 +50,28 @@ const MetricCard = ({ title, value, change, changeType, icon, gradient }: Metric
 };
 
 const OverviewCards = () => {
+  const { isConnected } = useVendor();
   const [metrics, setMetrics] = useState({
-    totalTransactions: 24567,
-    fraudDetected: 89,
-    safeTransactions: 24478,
-    avgFraudProbability: 3.6
+    totalTransactions: isConnected ? 24567 : 0,
+    fraudDetected: isConnected ? 89 : 0,
+    safeTransactions: isConnected ? 24478 : 0,
+    avgFraudProbability: isConnected ? 3.6 : 0
   });
 
   const [realTimeUpdates, setRealTimeUpdates] = useState(0);
 
-  // Simulate real-time updates
+  // Simulate real-time updates only when connected
   useEffect(() => {
+    if (!isConnected) {
+      setMetrics({
+        totalTransactions: 0,
+        fraudDetected: 0,
+        safeTransactions: 0,
+        avgFraudProbability: 0
+      });
+      return;
+    }
+
     const interval = setInterval(() => {
       setMetrics(prev => ({
         ...prev,
@@ -72,17 +84,17 @@ const OverviewCards = () => {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [isConnected]);
 
-  const fraudRate = ((metrics.fraudDetected / metrics.totalTransactions) * 100).toFixed(2);
+  const fraudRate = metrics.totalTransactions > 0 ? ((metrics.fraudDetected / metrics.totalTransactions) * 100).toFixed(2) : "0.00";
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
       <MetricCard
         title="Total Transactions"
         value={metrics.totalTransactions.toLocaleString()}
-        change="+2.1% from yesterday"
-        changeType="positive"
+        change={isConnected ? "+2.1% from yesterday" : "No data available"}
+        changeType={isConnected ? "positive" : "neutral"}
         icon={<ShoppingCart className="h-5 w-5 text-primary" />}
         gradient="gradient-primary"
       />
@@ -90,8 +102,8 @@ const OverviewCards = () => {
       <MetricCard
         title="Fraud Detected"
         value={metrics.fraudDetected.toLocaleString()}
-        change={`${fraudRate}% fraud rate`}
-        changeType="negative"
+        change={isConnected ? `${fraudRate}% fraud rate` : "No data available"}
+        changeType={isConnected ? "negative" : "neutral"}
         icon={<AlertTriangle className="h-5 w-5 text-fraud" />}
         gradient="gradient-fraud"
       />
@@ -99,8 +111,8 @@ const OverviewCards = () => {
       <MetricCard
         title="Safe Transactions"
         value={metrics.safeTransactions.toLocaleString()}
-        change="+1.8% from yesterday"
-        changeType="positive"
+        change={isConnected ? "+1.8% from yesterday" : "No data available"}
+        changeType={isConnected ? "positive" : "neutral"}
         icon={<CheckCircle className="h-5 w-5 text-safe" />}
         gradient="gradient-safe"
       />
@@ -108,8 +120,8 @@ const OverviewCards = () => {
       <MetricCard
         title="Avg Fraud Probability"
         value={`${metrics.avgFraudProbability.toFixed(1)}%`}
-        change="-0.3% from yesterday"
-        changeType="positive"
+        change={isConnected ? "-0.3% from yesterday" : "No data available"}
+        changeType={isConnected ? "positive" : "neutral"}
         icon={<TrendingUp className="h-5 w-5 text-suspicious" />}
         gradient="gradient-suspicious"
       />

@@ -1,34 +1,37 @@
 import { useState } from "react";
-import { TrendingUp, Download, Calendar, BarChart3 } from "lucide-react";
+import { TrendingUp, Download, Calendar, BarChart3, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import FraudCharts from "@/components/dashboard/FraudCharts";
 import AnalyticsCharts from "@/components/dashboard/AnalyticsCharts";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useVendor } from "@/contexts/VendorContext";
+import { Link } from "react-router-dom";
 
 const Analytics = () => {
   const [dateRange, setDateRange] = useState<'24h' | '7d' | '30d'>('7d');
+  const { isConnected } = useVendor();
 
   const analyticsCards = [
     {
       title: "Detection Rate",
-      value: "94.2%",
-      change: "+2.1%",
+      value: isConnected ? "94.2%" : "0%",
+      change: isConnected ? "+2.1%" : "No data",
       trend: "up",
       icon: TrendingUp,
     },
     {
       title: "False Positives",
-      value: "3.1%",
-      change: "-0.8%",
+      value: isConnected ? "3.1%" : "0%",
+      change: isConnected ? "-0.8%" : "No data",
       trend: "down",
       icon: BarChart3,
     },
     {
       title: "Response Time",
-      value: "125ms",
-      change: "-15ms",
+      value: isConnected ? "125ms" : "0ms",
+      change: isConnected ? "-15ms" : "No data",
       trend: "down", 
       icon: Calendar,
     },
@@ -100,104 +103,123 @@ const Analytics = () => {
       </div>
 
       {/* Charts */}
-      <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 glass-effect">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="trends">Trends</TabsTrigger>
-          <TabsTrigger value="patterns">Patterns</TabsTrigger>
-          <TabsTrigger value="performance">Performance</TabsTrigger>
-        </TabsList>
+      {isConnected ? (
+        <Tabs defaultValue="overview" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4 glass-effect">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="trends">Trends</TabsTrigger>
+            <TabsTrigger value="patterns">Patterns</TabsTrigger>
+            <TabsTrigger value="performance">Performance</TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="overview" className="space-y-6">
-          <Card className="card-3d">
-            <CardHeader>
-              <CardTitle>Fraud Detection Analytics</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <FraudCharts dateRange={dateRange} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="trends" className="space-y-6">
-          <Card className="card-3d">
-            <CardHeader>
-              <CardTitle>Detection & Performance Trends</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Real-time monitoring of detection rates, throughput, and response times
-              </p>
-            </CardHeader>
-            <CardContent>
-              <AnalyticsCharts type="trends" dateRange={dateRange} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="patterns" className="space-y-6">
-          <Card className="card-3d">
-            <CardHeader>
-              <CardTitle>Fraud Pattern Analysis</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Breakdown of different fraud patterns and attack vectors detected
-              </p>
-            </CardHeader>
-            <CardContent>
-              <AnalyticsCharts type="patterns" dateRange={dateRange} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="performance" className="space-y-6">
-          <div className="grid grid-cols-1 gap-6">
+          <TabsContent value="overview" className="space-y-6">
             <Card className="card-3d">
               <CardHeader>
-                <CardTitle>System Performance Radar</CardTitle>
+                <CardTitle>Fraud Detection Analytics</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <FraudCharts dateRange={dateRange} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="trends" className="space-y-6">
+            <Card className="card-3d">
+              <CardHeader>
+                <CardTitle>Detection & Performance Trends</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Comprehensive view of system resource utilization and performance metrics
+                  Real-time monitoring of detection rates, throughput, and response times
                 </p>
               </CardHeader>
               <CardContent>
-                <AnalyticsCharts type="performance" dateRange={dateRange} />
+                <AnalyticsCharts type="trends" dateRange={dateRange} />
               </CardContent>
             </Card>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          </TabsContent>
+
+          <TabsContent value="patterns" className="space-y-6">
+            <Card className="card-3d">
+              <CardHeader>
+                <CardTitle>Fraud Pattern Analysis</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Breakdown of different fraud patterns and attack vectors detected
+                </p>
+              </CardHeader>
+              <CardContent>
+                <AnalyticsCharts type="patterns" dateRange={dateRange} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="performance" className="space-y-6">
+            <div className="grid grid-cols-1 gap-6">
               <Card className="card-3d">
                 <CardHeader>
-                  <CardTitle className="text-lg">Processing Speed</CardTitle>
+                  <CardTitle>System Performance Radar</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Comprehensive view of system resource utilization and performance metrics
+                  </p>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-safe">125ms</div>
-                    <p className="text-sm text-muted-foreground">Avg Response Time</p>
-                  </div>
+                  <AnalyticsCharts type="performance" dateRange={dateRange} />
                 </CardContent>
               </Card>
-              <Card className="card-3d">
-                <CardHeader>
-                  <CardTitle className="text-lg">Accuracy Rate</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-primary">97.3%</div>
-                    <p className="text-sm text-muted-foreground">Detection Accuracy</p>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="card-3d">
-                <CardHeader>
-                  <CardTitle className="text-lg">System Uptime</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-safe">99.9%</div>
-                    <p className="text-sm text-muted-foreground">Last 30 Days</p>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <Card className="card-3d">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Processing Speed</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-safe">125ms</div>
+                      <p className="text-sm text-muted-foreground">Avg Response Time</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="card-3d">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Accuracy Rate</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-primary">97.3%</div>
+                      <p className="text-sm text-muted-foreground">Detection Accuracy</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="card-3d">
+                  <CardHeader>
+                    <CardTitle className="text-lg">System Uptime</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-safe">99.9%</div>
+                      <p className="text-sm text-muted-foreground">Last 30 Days</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
-          </div>
-        </TabsContent>
-      </Tabs>
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <Card className="card-3d">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <Settings className="h-16 w-16 text-muted-foreground mb-4" />
+            <h3 className="text-xl font-semibold text-foreground mb-2">
+              Connect Your Website to View Analytics
+            </h3>
+            <p className="text-muted-foreground mb-6 max-w-md">
+              To view analytics and performance metrics, you need to connect your website through the vendor integration.
+            </p>
+            <Button asChild className="gradient-primary">
+              <Link to="/vendors">
+                Set Up Integration
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

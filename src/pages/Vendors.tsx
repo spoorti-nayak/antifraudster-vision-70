@@ -6,9 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import VendorIntegration from "@/components/dashboard/VendorIntegration";
 import VendorSettings from "@/components/dashboard/VendorSettings";
+import { useVendor } from "@/contexts/VendorContext";
 
 const Vendors = () => {
   const [searchQuery, setSearchQuery] = useState("");
+  const { isConnected } = useVendor();
 
   const vendorStats = [
     { label: "Active Vendors", count: 24, color: "text-safe" },
@@ -36,7 +38,9 @@ const Vendors = () => {
           <CardContent className="pt-6">
             <div className="text-center">
               <p className="text-sm font-medium text-muted-foreground">Integration Status</p>
-              <p className="text-3xl font-bold text-safe">Connected</p>
+              <p className={`text-3xl font-bold ${isConnected ? 'text-safe' : 'text-muted-foreground'}`}>
+                {isConnected ? 'Connected' : 'Not Connected'}
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -44,7 +48,9 @@ const Vendors = () => {
           <CardContent className="pt-6">
             <div className="text-center">
               <p className="text-sm font-medium text-muted-foreground">API Requests Today</p>
-              <p className="text-3xl font-bold text-primary">1,247</p>
+              <p className={`text-3xl font-bold ${isConnected ? 'text-primary' : 'text-muted-foreground'}`}>
+                {isConnected ? '1,247' : '0'}
+              </p>
             </div>
           </CardContent>
         </Card>

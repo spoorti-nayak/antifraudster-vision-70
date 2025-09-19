@@ -2,9 +2,15 @@ import { useState, useEffect } from "react";
 import OverviewCards from "@/components/dashboard/OverviewCards";
 import TransactionStream from "@/components/dashboard/TransactionStream";
 import FraudAlertsPanel from "@/components/dashboard/FraudAlertsPanel";
+import { useVendor } from "@/contexts/VendorContext";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Link } from "react-router-dom";
+import { Settings } from "lucide-react";
 
 const Dashboard = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
+  const { isConnected } = useVendor();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -44,17 +50,36 @@ const Dashboard = () => {
       </div>
 
       {/* Real-time Monitoring Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Transaction Stream */}
-        <div className="animate-slide-up card-3d" style={{ animationDelay: '0.1s' }}>
-          <TransactionStream />
+      {isConnected ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Transaction Stream */}
+          <div className="animate-slide-up card-3d" style={{ animationDelay: '0.1s' }}>
+            <TransactionStream />
+          </div>
+          
+          {/* Fraud Alerts */}
+          <div className="animate-slide-up card-3d" style={{ animationDelay: '0.2s' }}>
+            <FraudAlertsPanel />
+          </div>
         </div>
-        
-        {/* Fraud Alerts */}
-        <div className="animate-slide-up card-3d" style={{ animationDelay: '0.2s' }}>
-          <FraudAlertsPanel />
-        </div>
-      </div>
+      ) : (
+        <Card className="animate-slide-up">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <Settings className="h-16 w-16 text-muted-foreground mb-4" />
+            <h3 className="text-xl font-semibold text-foreground mb-2">
+              Connect Your Website to Start Monitoring
+            </h3>
+            <p className="text-muted-foreground mb-6 max-w-md">
+              To view real-time transaction data and fraud alerts, you need to connect your website through the vendor integration.
+            </p>
+            <Button asChild className="gradient-primary">
+              <Link to="/vendors">
+                Set Up Integration
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
     </div>
   );

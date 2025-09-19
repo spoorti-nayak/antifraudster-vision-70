@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,11 +15,17 @@ import {
   Package
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useVendor } from "@/contexts/VendorContext";
 
 const VendorIntegration = () => {
-  const [apiKey, setApiKey] = useState("");
-  const [websiteUrl, setWebsiteUrl] = useState("");
-  const [isConnected, setIsConnected] = useState(false);
+  const { 
+    isConnected, 
+    setIsConnected, 
+    websiteUrl, 
+    setWebsiteUrl, 
+    apiKey, 
+    setApiKey 
+  } = useVendor();
   const { toast } = useToast();
 
   const generateApiKey = () => {
