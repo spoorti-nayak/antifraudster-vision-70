@@ -14,16 +14,30 @@ const Settings = () => {
     systemUpdates: false,
     reportGeneration: true,
   });
-  const [profile, setProfile] = useState({ firstName: 'John', lastName: 'Doe', email: 'john@example.com', company: 'Acme Corp' });
+  const [profile, setProfile] = useState({ firstName: '', lastName: '', email: '', company: '' });
   const [apiKey, setApiKey] = useState<string>(localStorage.getItem('af_api_key') || '');
   const [system, setSystem] = useState({ maintenanceMode: false, autoUpdates: true });
   const { toast } = useToast();
 
   useEffect(() => {
+    // Load from auth user if available, otherwise from localStorage
+    const userData = localStorage.getItem('user');
     const savedProfile = localStorage.getItem('af_profile');
     const savedNotifications = localStorage.getItem('af_notifications');
     const savedSystem = localStorage.getItem('af_system');
-    if (savedProfile) setProfile(JSON.parse(savedProfile));
+    
+    if (userData) {
+      const user = JSON.parse(userData);
+      setProfile({
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        email: user.email || '',
+        company: user.company || ''
+      });
+    } else if (savedProfile) {
+      setProfile(JSON.parse(savedProfile));
+    }
+    
     if (savedNotifications) setNotifications(JSON.parse(savedNotifications));
     if (savedSystem) setSystem(JSON.parse(savedSystem));
   }, []);

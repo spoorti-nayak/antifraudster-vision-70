@@ -41,7 +41,7 @@ const VendorIntegration = () => {
     navigator.clipboard.writeText(text);
     toast({
       title: "Copied!",
-      description: "Code snippet copied to clipboard.",
+      description: "API key copied to clipboard.",
     });
   };
 

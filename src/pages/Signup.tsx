@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,19 @@ const Signup = () => {
     password: "",
     confirmPassword: ""
   });
+
+  // Load saved form data on mount
+  useEffect(() => {
+    const savedFormData = localStorage.getItem('signupFormData');
+    if (savedFormData) {
+      setFormData(JSON.parse(savedFormData));
+    }
+  }, []);
+
+  // Save form data whenever it changes
+  useEffect(() => {
+    localStorage.setItem('signupFormData', JSON.stringify(formData));
+  }, [formData]);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const { register } = useAuth();
@@ -61,6 +74,9 @@ const Signup = () => {
         password: formData.password,
       });
       
+      // Clear saved form data on successful signup
+      localStorage.removeItem('signupFormData');
+      
       toast({
         title: "Account Created Successfully",
         description: "Welcome to Antifraudster! You can now access your dashboard.",
@@ -85,7 +101,7 @@ const Signup = () => {
             <Shield className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-foreground">Join Antifraudster</h1>
-          <p className="text-muted-foreground mt-2">Start protecting your e-commerce business today</p>
+          <p className="text-muted-foreground mt-2">Advanced fraud detection for modern businesses</p>
         </div>
 
         {/* Signup Form */}

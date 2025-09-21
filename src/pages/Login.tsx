@@ -46,7 +46,7 @@ const Login = () => {
             <Shield className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-foreground">Antifraudster</h1>
-          <p className="text-muted-foreground mt-2">Secure your e-commerce with AI-powered fraud detection</p>
+          <p className="text-muted-foreground mt-2">Advanced fraud detection for modern businesses</p>
         </div>
 
         {/* Login Form */}
@@ -122,13 +122,6 @@ const Login = () => {
           </form>
         </Card>
 
-        {/* Demo Notice */}
-        <div className="text-center">
-          <p className="text-xs text-muted-foreground bg-muted/30 rounded-lg p-3 backdrop-blur-sm">
-            <Shield className="inline w-3 h-3 mr-1" />
-            Demo Mode: Use any email/password to access the dashboard
-          </p>
-        </div>
       </div>
     </div>
   );
