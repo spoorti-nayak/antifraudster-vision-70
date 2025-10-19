@@ -9,6 +9,8 @@ import {
   AlertTriangle 
 } from "lucide-react";
 import { useVendor } from "@/contexts/VendorContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 interface MetricCardProps {
   title: string;
@@ -51,40 +53,70 @@ const MetricCard = ({ title, value, change, changeType, icon, gradient }: Metric
 
 const OverviewCards = () => {
   const { isConnected } = useVendor();
+  const { user } = useAuth();
   const [metrics, setMetrics] = useState({
-    totalTransactions: isConnected ? 24567 : 0,
-    fraudDetected: isConnected ? 89 : 0,
-    safeTransactions: isConnected ? 24478 : 0,
-    avgFraudProbability: isConnected ? 3.6 : 0
+    totalTransactions: 0,
+    fraudDetected: 0,
+    safeTransactions: 0,
+    avgFraudProbability: 0
   });
 
-  const [realTimeUpdates, setRealTimeUpdates] = useState(0);
-
-  // Simulate real-time updates only when connected
+  // Load real metrics from database
   useEffect(() => {
-    if (!isConnected) {
-      setMetrics({
-        totalTransactions: 0,
-        fraudDetected: 0,
-        safeTransactions: 0,
-        avgFraudProbability: 0
-      });
-      return;
+    const loadMetrics = async () => {
+      if (!user?.merchantProfile?.id) return;
+
+      try {
+        const { data: transactions, error } = await supabase
+          .from('transactions')
+          .select('fraud_score, status')
+          .eq('merchant_id', user.merchantProfile.id);
+
+        if (error) throw error;
+
+        const total = transactions?.length || 0;
+        const fraudulent = transactions?.filter(t => t.status === 'flagged').length || 0;
+        const safe = transactions?.filter(t => t.status === 'approved').length || 0;
+        const avgScore = transactions?.length 
+          ? transactions.reduce((sum, t) => sum + (t.fraud_score || 0), 0) / transactions.length 
+          : 0;
+
+        setMetrics({
+          totalTransactions: total,
+          fraudDetected: fraudulent,
+          safeTransactions: safe,
+          avgFraudProbability: avgScore
+        });
+      } catch (error) {
+        console.error('Error loading metrics:', error);
+      }
+    };
+
+    loadMetrics();
+
+    // Subscribe to real-time updates
+    if (user?.merchantProfile?.id) {
+      const channel = supabase
+        .channel('transactions-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'transactions',
+            filter: `merchant_id=eq.${user.merchantProfile.id}`
+          },
+          () => {
+            loadMetrics();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
-
-    const interval = setInterval(() => {
-      setMetrics(prev => ({
-        ...prev,
-        totalTransactions: prev.totalTransactions + Math.floor(Math.random() * 3),
-        fraudDetected: prev.fraudDetected + (Math.random() < 0.1 ? 1 : 0),
-        safeTransactions: prev.safeTransactions + Math.floor(Math.random() * 3),
-        avgFraudProbability: Math.max(1, Math.min(10, prev.avgFraudProbability + (Math.random() - 0.5) * 0.2))
-      }));
-      setRealTimeUpdates(prev => prev + 1);
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [isConnected]);
+  }, [user?.merchantProfile?.id]);
 
   const fraudRate = metrics.totalTransactions > 0 ? ((metrics.fraudDetected / metrics.totalTransactions) * 100).toFixed(2) : "0.00";
 

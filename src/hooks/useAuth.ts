@@ -1,7 +1,18 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import apiService from '@/services/api';
-import webSocketService from '@/services/websocket';
+import { supabase } from '@/integrations/supabase/client';
+import { User as SupabaseUser } from '@supabase/supabase-js';
+
+interface MerchantProfile {
+  id: string;
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  company_name: string;
+  email: string;
+  created_at: string;
+  updated_at: string;
+}
 
 interface User {
   id: string;
@@ -9,8 +20,7 @@ interface User {
   firstName: string;
   lastName: string;
   company: string;
-  role: string;
-  isActive: boolean;
+  merchantProfile?: MerchantProfile;
 }
 
 interface AuthContextType {
@@ -44,49 +54,98 @@ export const useAuthProvider = () => {
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
 
+  const loadMerchantProfile = async (userId: string): Promise<MerchantProfile | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('merchants')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Error loading merchant profile:', error);
+      return null;
+    }
+  };
+
   useEffect(() => {
-    // Check for existing auth on mount
-    const token = localStorage.getItem('auth_token');
-    const savedUser = localStorage.getItem('user');
-    
-    if (token && savedUser) {
+    // Check for existing auth session
+    const checkSession = async () => {
       try {
-        setUser(JSON.parse(savedUser));
-        webSocketService.updateToken(token);
-        // Connect WebSocket in a non-blocking way
-        try {
-          webSocketService.connect();
-        } catch (wsError) {
-          console.warn('WebSocket connection failed during initialization:', wsError);
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user) {
+          const profile = await loadMerchantProfile(session.user.id);
+          
+          setUser({
+            id: session.user.id,
+            email: session.user.email!,
+            firstName: profile?.first_name || '',
+            lastName: profile?.last_name || '',
+            company: profile?.company_name || '',
+            merchantProfile: profile || undefined,
+          });
         }
       } catch (error) {
-        console.error('Error parsing saved user:', error);
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('user');
+        console.error('Error checking session:', error);
+      } finally {
+        setIsLoading(false);
       }
-    }
-    
-    setIsLoading(false);
+    };
+
+    checkSession();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        const profile = await loadMerchantProfile(session.user.id);
+        
+        setUser({
+          id: session.user.id,
+          email: session.user.email!,
+          firstName: profile?.first_name || '',
+          lastName: profile?.last_name || '',
+          company: profile?.company_name || '',
+          merchantProfile: profile || undefined,
+        });
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const login = async (email: string, password: string) => {
     try {
       setIsLoading(true);
-      const response = await apiService.login(email, password);
-      setUser(response.user);
       
-      // Start WebSocket connection
-      webSocketService.updateToken(response.token);
-      try {
-        webSocketService.connect();
-      } catch (wsError) {
-        console.warn('WebSocket connection failed during login:', wsError);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+      
+      if (data.user) {
+        const profile = await loadMerchantProfile(data.user.id);
+        
+        setUser({
+          id: data.user.id,
+          email: data.user.email!,
+          firstName: profile?.first_name || '',
+          lastName: profile?.last_name || '',
+          company: profile?.company_name || '',
+          merchantProfile: profile || undefined,
+        });
       }
       
       navigate('/dashboard');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
-      throw error;
+      throw new Error(error.message || 'Login failed');
     } finally {
       setIsLoading(false);
     }
@@ -101,21 +160,46 @@ export const useAuthProvider = () => {
   }) => {
     try {
       setIsLoading(true);
-      const response = await apiService.register(userData);
-      setUser(response.user);
       
-      // Start WebSocket connection
-      webSocketService.updateToken(response.token);
-      try {
-        webSocketService.connect();
-      } catch (wsError) {
-        console.warn('WebSocket connection failed during registration:', wsError);
-      }
+      // Sign up the user
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: userData.email,
+        password: userData.password,
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('User creation failed');
+
+      // Create merchant profile
+      const { data: profileData, error: profileError } = await supabase
+        .from('merchants')
+        .insert({
+          name: userData.company,
+          domain: '', // Will be set up later during vendor integration
+          user_id: authData.user.id,
+          first_name: userData.firstName,
+          last_name: userData.lastName,
+          company_name: userData.company,
+          email: userData.email,
+        })
+        .select()
+        .single();
+
+      if (profileError) throw profileError;
+
+      setUser({
+        id: authData.user.id,
+        email: authData.user.email!,
+        firstName: profileData.first_name,
+        lastName: profileData.last_name,
+        company: profileData.company_name,
+        merchantProfile: profileData,
+      });
       
       navigate('/dashboard');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Registration error:', error);
-      throw error;
+      throw new Error(error.message || 'Registration failed');
     } finally {
       setIsLoading(false);
     }
@@ -123,37 +207,35 @@ export const useAuthProvider = () => {
 
   const logout = async () => {
     try {
-      await apiService.logout();
+      await supabase.auth.signOut();
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
       setUser(null);
-      webSocketService.disconnect();
       navigate('/login');
     }
   };
 
   const refreshAuth = async () => {
     try {
-      await apiService.refreshToken();
-      // Token is automatically updated in apiService
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const profile = await loadMerchantProfile(session.user.id);
+        
+        setUser({
+          id: session.user.id,
+          email: session.user.email!,
+          firstName: profile?.first_name || '',
+          lastName: profile?.last_name || '',
+          company: profile?.company_name || '',
+          merchantProfile: profile || undefined,
+        });
+      }
     } catch (error) {
-      console.error('Token refresh failed:', error);
-      // If refresh fails, logout user
+      console.error('Session refresh failed:', error);
       await logout();
     }
   };
-
-  // Auto-refresh token
-  useEffect(() => {
-    if (user) {
-      const interval = setInterval(() => {
-        refreshAuth();
-      }, 15 * 60 * 1000); // Refresh every 15 minutes
-
-      return () => clearInterval(interval);
-    }
-  }, [user]);
 
   return {
     user,

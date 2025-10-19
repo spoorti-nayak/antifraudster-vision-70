@@ -193,30 +193,45 @@ export type Database = {
       merchants: {
         Row: {
           api_key: string
+          company_name: string | null
           created_at: string | null
           domain: string
+          email: string | null
+          first_name: string | null
           id: string
           is_active: boolean | null
+          last_name: string | null
           name: string
           updated_at: string | null
+          user_id: string | null
         }
         Insert: {
           api_key?: string
+          company_name?: string | null
           created_at?: string | null
           domain: string
+          email?: string | null
+          first_name?: string | null
           id?: string
           is_active?: boolean | null
+          last_name?: string | null
           name: string
           updated_at?: string | null
+          user_id?: string | null
         }
         Update: {
           api_key?: string
+          company_name?: string | null
           created_at?: string | null
           domain?: string
+          email?: string | null
+          first_name?: string | null
           id?: string
           is_active?: boolean | null
+          last_name?: string | null
           name?: string
           updated_at?: string | null
+          user_id?: string | null
         }
         Relationships: []
       }
