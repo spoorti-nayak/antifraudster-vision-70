@@ -10,68 +10,41 @@ import {
   CheckCircle,
   Clock
 } from "lucide-react";
-import { useVendor } from "@/contexts/VendorContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Transaction {
   id: string;
-  buyer: string;
+  customer_email: string;
   amount: number;
-  status: 'safe' | 'fraud' | 'processing';
-  probability: number;
-  timestamp: Date;
-  explanation?: string;
+  status: 'pending' | 'approved' | 'flagged' | 'blocked';
+  fraud_score: number;
+  created_at: string;
+  fraud_reasons?: any;
 }
-
-const generateMockTransaction = (): Transaction => {
-  const buyers = [
-    "john.doe@email.com", "sarah.smith@company.com", "mike.wilson@store.com",
-    "anna.garcia@shop.org", "david.brown@market.net", "lisa.jones@buy.com",
-    "robert.davis@purchase.io", "emily.clark@order.co", "james.white@cart.biz"
-  ];
-  
-  const isFraud = Math.random() < 0.12; // 12% fraud rate
-  const probability = isFraud 
-    ? Math.random() * 40 + 60 // 60-100% for fraud
-    : Math.random() * 30 + 5; // 5-35% for safe
-  
-  const explanations = isFraud ? [
-    "IP mismatch detected", "Unusual spending pattern", "Velocity check failed",
-    "Device fingerprint anomaly", "Geolocation inconsistency", "Card testing behavior"
-  ] : [
-    "Normal purchase pattern", "Verified customer", "Trusted device",
-    "Regular transaction amount", "Known location", "Account in good standing"
-  ];
-
-  return {
-    id: `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    buyer: buyers[Math.floor(Math.random() * buyers.length)],
-    amount: Math.floor(Math.random() * 90000 + 10000), // ₹10,000 to ₹1,00,000
-    status: isFraud ? 'fraud' : 'safe',
-    probability,
-    timestamp: new Date(),
-    explanation: explanations[Math.floor(Math.random() * explanations.length)]
-  };
-};
 
 const TransactionItem = ({ transaction }: { transaction: Transaction }) => {
   const getStatusIcon = () => {
     switch (transaction.status) {
-      case 'safe':
+      case 'approved':
         return <CheckCircle className="h-4 w-4 text-safe" />;
-      case 'fraud':
+      case 'flagged':
+      case 'blocked':
         return <AlertTriangle className="h-4 w-4 text-fraud" />;
-      case 'processing':
+      case 'pending':
         return <Clock className="h-4 w-4 text-suspicious animate-spin" />;
     }
   };
 
   const getStatusBadge = () => {
     switch (transaction.status) {
-      case 'safe':
+      case 'approved':
         return <Badge className="status-safe text-xs">Safe</Badge>;
-      case 'fraud':
-        return <Badge className="status-fraud text-xs">Fraud</Badge>;
-      case 'processing':
+      case 'flagged':
+        return <Badge className="status-fraud text-xs">Flagged</Badge>;
+      case 'blocked':
+        return <Badge className="status-fraud text-xs">Blocked</Badge>;
+      case 'pending':
         return <Badge className="status-suspicious text-xs">Processing</Badge>;
     }
   };
@@ -84,18 +57,18 @@ const TransactionItem = ({ transaction }: { transaction: Transaction }) => {
           <div className="flex items-center space-x-2 mb-1">
             <User className="h-3 w-3 text-muted-foreground" />
             <span className="text-sm font-medium text-foreground truncate">
-              {transaction.buyer}
+              {transaction.customer_email}
             </span>
           </div>
           <div className="flex items-center space-x-2 text-xs text-muted-foreground">
             <DollarSign className="h-3 w-3" />
             <span>₹{transaction.amount.toLocaleString('en-IN')}</span>
             <span>•</span>
-            <span>{transaction.probability.toFixed(1)}% risk</span>
+            <span>{transaction.fraud_score.toFixed(1)}% risk</span>
           </div>
-          {transaction.explanation && (
+          {transaction.fraud_reasons && (
             <p className="text-xs text-muted-foreground mt-1 truncate">
-              {transaction.explanation}
+              {Array.isArray(transaction.fraud_reasons) ? transaction.fraud_reasons.join(', ') : ''}
             </p>
           )}
         </div>
@@ -104,7 +77,7 @@ const TransactionItem = ({ transaction }: { transaction: Transaction }) => {
       <div className="flex flex-col items-end space-y-1">
         {getStatusBadge()}
         <span className="text-xs text-muted-foreground">
-          {transaction.timestamp.toLocaleTimeString([], { 
+          {new Date(transaction.created_at).toLocaleTimeString([], { 
             hour: '2-digit', 
             minute: '2-digit' 
           })}
@@ -115,34 +88,61 @@ const TransactionItem = ({ transaction }: { transaction: Transaction }) => {
 };
 
 const TransactionStream = () => {
-  const { isConnected } = useVendor();
+  const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [isLive, setIsLive] = useState(true);
 
   useEffect(() => {
-    if (!isConnected) {
-      setTransactions([]);
-      return;
-    }
+    if (!user?.merchantProfile?.id) return;
 
-    // Initialize with some transactions
-    const initialTransactions = Array.from({ length: 8 }, () => generateMockTransaction())
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-    setTransactions(initialTransactions);
+    // Load initial transactions
+    const loadTransactions = async () => {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('merchant_id', user.merchantProfile.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
 
-    // Add new transactions periodically
-    const interval = setInterval(() => {
-      if (isLive) {
-        const newTransaction = generateMockTransaction();
-        setTransactions(prev => [newTransaction, ...prev].slice(0, 20)); // Keep only last 20
+      if (error) {
+        console.error('Error loading transactions:', error);
+        return;
       }
-    }, Math.random() * 3000 + 2000); // Random interval between 2-5 seconds
 
-    return () => clearInterval(interval);
-  }, [isLive, isConnected]);
+      setTransactions(data || []);
+    };
 
-  const liveTransactions = transactions.filter(t => t.status !== 'processing').length;
-  const fraudCount = transactions.filter(t => t.status === 'fraud').length;
+    loadTransactions();
+
+    // Subscribe to real-time updates
+    const channel = supabase
+      .channel('transaction-stream')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'transactions',
+          filter: `merchant_id=eq.${user.merchantProfile.id}`
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setTransactions(prev => [payload.new as Transaction, ...prev].slice(0, 20));
+          } else if (payload.eventType === 'UPDATE') {
+            setTransactions(prev => 
+              prev.map(t => t.id === payload.new.id ? payload.new as Transaction : t)
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.merchantProfile?.id]);
+
+  const liveTransactions = transactions.filter(t => t.status !== 'pending').length;
+  const fraudCount = transactions.filter(t => t.status === 'flagged' || t.status === 'blocked').length;
 
   return (
     <Card className="h-[600px] flex flex-col">
@@ -180,7 +180,7 @@ const TransactionStream = () => {
                 <div className="flex items-center justify-center h-32 text-muted-foreground">
                   <div className="text-center">
                     <Activity className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p>{isConnected ? "Waiting for transactions..." : "Connect your website to see transactions"}</p>
+                    <p>{user?.merchantProfile ? "Waiting for transactions..." : "Connect your merchant account"}</p>
                   </div>
                 </div>
               )}

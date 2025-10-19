@@ -13,107 +13,33 @@ import {
   MapPin,
   CreditCard
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 interface FraudAlert {
   id: string;
-  transactionId: string;
-  buyer: string;
-  amount: number;
-  riskLevel: 'low' | 'medium' | 'high';
-  riskScore: number;
-  explanation: string;
-  timestamp: Date;
-  details: string[];
-  dismissed: boolean;
+  transaction_id: string;
+  merchant_id: string;
+  alert_type: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  message: string;
+  details: any;
+  is_resolved: boolean;
+  created_at: string;
 }
-
-const generateMockAlert = (): FraudAlert => {
-  const buyers = [
-    "suspicious.user@temp.mail", "fraud.attempt@fake.org", "test.card@invalid.com",
-    "multiple.orders@anomaly.net", "high.velocity@risk.co", "bot.activity@detected.io"
-  ];
-
-  const riskLevels: Array<'low' | 'medium' | 'high'> = ['low', 'medium', 'high'];
-  const riskLevel = riskLevels[Math.floor(Math.random() * riskLevels.length)];
-  
-  const explanations = {
-    high: [
-      "Multiple failed payment attempts from different cards",
-      "Suspicious IP address with known fraud history",
-      "Extremely high order value compared to account history",
-      "Account created minutes before large purchase",
-      "Device fingerprint matches known fraudulent patterns"
-    ],
-    medium: [
-      "Order amount significantly higher than usual",
-      "Shipping address doesn't match billing address",
-      "Multiple orders in short time span",
-      "New payment method for established account",
-      "Unusual time of purchase for customer"
-    ],
-    low: [
-      "Slightly elevated velocity compared to normal",
-      "Minor geolocation inconsistency detected",
-      "Payment method not previously used",
-      "Order value above average but within limits",
-      "Time gap since last purchase unusual"
-    ]
-  };
-
-  const detailsMap = {
-    high: [
-      "5 payment failures in 2 minutes",
-      "IP geolocation: Unknown/Proxy detected",
-      "Device risk score: 95/100",
-      "Account age: 3 minutes"
-    ],
-    medium: [
-      "Order value: 300% above average",
-      "Billing/Shipping mismatch",
-      "3 orders in 10 minutes",
-      "New card added 5 mins ago"
-    ],
-    low: [
-      "Velocity: 2x normal rate",
-      "Location: 50 miles from usual",
-      "Payment method: First time use",
-      "Amount: 150% of average"
-    ]
-  };
-
-  const getRiskScore = () => {
-    switch (riskLevel) {
-      case 'high': return Math.random() * 20 + 80;  // 80-100
-      case 'medium': return Math.random() * 30 + 50; // 50-80
-      case 'low': return Math.random() * 20 + 30;    // 30-50
-    }
-  };
-
-  return {
-    id: `ALERT-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-    transactionId: `TXN-${Math.random().toString(36).substr(2, 9)}`,
-    buyer: buyers[Math.floor(Math.random() * buyers.length)],
-    amount: Math.floor(Math.random() * 90000 + 10000), // ₹10,000 to ₹1,00,000
-    riskLevel,
-    riskScore: getRiskScore(),
-    explanation: explanations[riskLevel][Math.floor(Math.random() * explanations[riskLevel].length)],
-    timestamp: new Date(),
-    details: detailsMap[riskLevel],
-    dismissed: false
-  };
-};
 
 const AlertItem = ({ 
   alert, 
-  onDismiss, 
+  onResolve, 
   onView 
 }: { 
   alert: FraudAlert; 
-  onDismiss: (id: string) => void;
+  onResolve: (id: string) => void;
   onView: (alert: FraudAlert) => void;
 }) => {
   const getRiskColor = () => {
-    switch (alert.riskLevel) {
+    switch (alert.severity) {
+      case 'critical':
       case 'high': return 'status-fraud';
       case 'medium': return 'status-suspicious';
       case 'low': return 'bg-muted text-muted-foreground';
@@ -121,7 +47,8 @@ const AlertItem = ({
   };
 
   const getRiskIcon = () => {
-    switch (alert.riskLevel) {
+    switch (alert.severity) {
+      case 'critical':
       case 'high': return <AlertTriangle className="h-4 w-4 text-fraud" />;
       case 'medium': return <AlertTriangle className="h-4 w-4 text-suspicious" />;
       case 'low': return <Bell className="h-4 w-4 text-muted-foreground" />;
@@ -130,16 +57,16 @@ const AlertItem = ({
 
   return (
     <div className={`p-4 border rounded-lg space-y-3 animate-fade-in ${
-      alert.dismissed ? 'opacity-50' : ''
+      alert.is_resolved ? 'opacity-50' : ''
     }`}>
       <div className="flex items-start justify-between">
         <div className="flex items-center space-x-2">
           {getRiskIcon()}
           <Badge className={`${getRiskColor()} text-xs uppercase`}>
-            {alert.riskLevel} Risk
+            {alert.severity} Risk
           </Badge>
           <Badge variant="outline" className="text-xs">
-            {alert.riskScore.toFixed(0)}% Risk Score
+            {alert.alert_type}
           </Badge>
         </div>
         
@@ -155,7 +82,7 @@ const AlertItem = ({
           <Button 
             variant="ghost" 
             size="sm"
-            onClick={() => onDismiss(alert.id)}
+            onClick={() => onResolve(alert.id)}
             className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
           >
             <X className="h-3 w-3" />
@@ -164,80 +91,103 @@ const AlertItem = ({
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center space-x-2 text-sm">
-          <span className="font-medium text-foreground">{alert.buyer}</span>
-          <DollarSign className="h-3 w-3 text-muted-foreground" />
-          <span className="text-muted-foreground">₹{alert.amount.toLocaleString('en-IN')}</span>
-        </div>
-        
-        <p className="text-sm text-foreground">{alert.explanation}</p>
+        <p className="text-sm text-foreground">{alert.message}</p>
         
         <div className="flex items-center space-x-4 text-xs text-muted-foreground">
           <div className="flex items-center space-x-1">
             <Clock className="h-3 w-3" />
-            <span>{alert.timestamp.toLocaleTimeString([], { 
+            <span>{new Date(alert.created_at).toLocaleTimeString([], { 
               hour: '2-digit', 
               minute: '2-digit' 
             })}</span>
           </div>
-          <span>ID: {alert.transactionId}</span>
+          <span>ID: {alert.transaction_id.slice(0, 8)}</span>
         </div>
 
-        {/* Quick details preview */}
-        <div className="flex flex-wrap gap-1">
-          {alert.details.slice(0, 2).map((detail, index) => (
-            <Badge key={index} variant="outline" className="text-xs">
-              {detail}
-            </Badge>
-          ))}
-          {alert.details.length > 2 && (
-            <Badge variant="outline" className="text-xs text-muted-foreground">
-              +{alert.details.length - 2} more
-            </Badge>
-          )}
-        </div>
+        {alert.details && (
+          <div className="flex flex-wrap gap-1">
+            {Object.entries(alert.details).slice(0, 2).map(([key, value], index) => (
+              <Badge key={index} variant="outline" className="text-xs">
+                {key}: {String(value)}
+              </Badge>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
 const FraudAlertsPanel = () => {
+  const { user } = useAuth();
   const [alerts, setAlerts] = useState<FraudAlert[]>([]);
   const [viewingAlert, setViewingAlert] = useState<FraudAlert | null>(null);
 
   useEffect(() => {
-    // Initialize with some alerts
-    const initialAlerts = Array.from({ length: 5 }, () => generateMockAlert())
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-    setAlerts(initialAlerts);
+    if (!user?.merchantProfile?.id) return;
 
-    // Add new alerts periodically
-    const interval = setInterval(() => {
-      if (Math.random() < 0.3) { // 30% chance every interval
-        const newAlert = generateMockAlert();
-        setAlerts(prev => [newAlert, ...prev].slice(0, 10)); // Keep only last 10
+    // Load alerts
+    const loadAlerts = async () => {
+      const { data, error } = await supabase
+        .from('fraud_alerts')
+        .select('*')
+        .eq('merchant_id', user.merchantProfile.id)
+        .eq('is_resolved', false)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) {
+        console.error('Error loading alerts:', error);
+        return;
       }
-    }, 8000); // Every 8 seconds
 
-    return () => clearInterval(interval);
-  }, []);
+      setAlerts(data || []);
+    };
 
-  const handleDismiss = (alertId: string) => {
-    setAlerts(prev => 
-      prev.map(alert => 
-        alert.id === alertId 
-          ? { ...alert, dismissed: true }
-          : alert
+    loadAlerts();
+
+    // Subscribe to real-time updates
+    const channel = supabase
+      .channel('fraud-alerts')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'fraud_alerts',
+          filter: `merchant_id=eq.${user.merchantProfile.id}`
+        },
+        (payload) => {
+          setAlerts(prev => [payload.new as FraudAlert, ...prev].slice(0, 10));
+        }
       )
-    );
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.merchantProfile?.id]);
+
+  const handleResolve = async (alertId: string) => {
+    const { error } = await supabase
+      .from('fraud_alerts')
+      .update({ is_resolved: true, resolved_at: new Date().toISOString() })
+      .eq('id', alertId);
+
+    if (error) {
+      console.error('Error resolving alert:', error);
+      return;
+    }
+
+    setAlerts(prev => prev.filter(a => a.id !== alertId));
   };
 
   const handleView = (alert: FraudAlert) => {
     setViewingAlert(alert);
   };
 
-  const activeAlerts = alerts.filter(a => !a.dismissed);
-  const highRiskCount = activeAlerts.filter(a => a.riskLevel === 'high').length;
+  const activeAlerts = alerts.filter(a => !a.is_resolved);
+  const highRiskCount = activeAlerts.filter(a => a.severity === 'high' || a.severity === 'critical').length;
 
   return (
     <Card className="h-[600px] flex flex-col">
@@ -267,7 +217,7 @@ const FraudAlertsPanel = () => {
                 <AlertItem 
                   key={alert.id} 
                   alert={alert} 
-                  onDismiss={handleDismiss}
+                  onResolve={handleResolve}
                   onView={handleView}
                 />
               ))}
