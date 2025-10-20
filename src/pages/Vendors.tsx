@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Store, Plus, Search, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,11 +6,33 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import VendorIntegration from "@/components/dashboard/VendorIntegration";
 import VendorSettings from "@/components/dashboard/VendorSettings";
-import { useVendor } from "@/contexts/VendorContext";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 const Vendors = () => {
   const [searchQuery, setSearchQuery] = useState("");
-  const { isConnected } = useVendor();
+  const { user } = useAuth();
+  const [requestCount, setRequestCount] = useState(0);
+  const isConnected = !!user?.merchantProfile?.api_key;
+
+  useEffect(() => {
+    if (!user?.merchantProfile?.id) return;
+
+    const fetchRequestCount = async () => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const { count } = await supabase
+        .from('transactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('merchant_id', user.merchantProfile.id)
+        .gte('created_at', today.toISOString());
+
+      setRequestCount(count || 0);
+    };
+
+    fetchRequestCount();
+  }, [user?.merchantProfile?.id]);
 
   const vendorStats = [
     { label: "Active Vendors", count: 24, color: "text-safe" },
@@ -49,7 +71,7 @@ const Vendors = () => {
             <div className="text-center">
               <p className="text-sm font-medium text-muted-foreground">API Requests Today</p>
               <p className={`text-3xl font-bold ${isConnected ? 'text-primary' : 'text-muted-foreground'}`}>
-                {isConnected ? '1,247' : '0'}
+                {isConnected ? requestCount.toLocaleString() : '0'}
               </p>
             </div>
           </CardContent>

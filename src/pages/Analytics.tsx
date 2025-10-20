@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { TrendingUp, Download, Calendar, BarChart3, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,31 +6,55 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import FraudCharts from "@/components/dashboard/FraudCharts";
 import AnalyticsCharts from "@/components/dashboard/AnalyticsCharts";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useVendor } from "@/contexts/VendorContext";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 import { Link } from "react-router-dom";
 
 const Analytics = () => {
   const [dateRange, setDateRange] = useState<'24h' | '7d' | '30d'>('7d');
-  const { isConnected } = useVendor();
+  const { user } = useAuth();
+  const [stats, setStats] = useState({ total: 0, fraudDetected: 0, avgScore: 0 });
+  const isConnected = !!user?.merchantProfile?.api_key;
+
+  useEffect(() => {
+    if (!user?.merchantProfile?.id) return;
+
+    const fetchStats = async () => {
+      const { data } = await supabase
+        .from('transactions')
+        .select('status, fraud_score')
+        .eq('merchant_id', user.merchantProfile.id);
+
+      if (data) {
+        const total = data.length;
+        const fraudDetected = data.filter(t => t.status === 'blocked' || t.status === 'flagged').length;
+        const avgScore = total > 0 ? data.reduce((sum, t) => sum + (t.fraud_score || 0), 0) / total : 0;
+        
+        setStats({ total, fraudDetected, avgScore });
+      }
+    };
+
+    fetchStats();
+  }, [user?.merchantProfile?.id]);
 
   const analyticsCards = [
     {
       title: "Detection Rate",
-      value: isConnected ? "94.2%" : "0%",
+      value: isConnected && stats.total > 0 ? `${((stats.fraudDetected / stats.total) * 100).toFixed(1)}%` : "0%",
       change: isConnected ? "+2.1%" : "No data",
       trend: "up",
       icon: TrendingUp,
     },
     {
-      title: "False Positives",
-      value: isConnected ? "3.1%" : "0%",
-      change: isConnected ? "-0.8%" : "No data",
+      title: "Total Transactions",
+      value: isConnected ? stats.total.toString() : "0",
+      change: isConnected ? `${stats.fraudDetected} flagged` : "No data",
       trend: "down",
       icon: BarChart3,
     },
     {
-      title: "Response Time",
-      value: isConnected ? "125ms" : "0ms",
+      title: "Avg Fraud Score",
+      value: isConnected ? `${stats.avgScore.toFixed(1)}%` : "0%",
       change: isConnected ? "-15ms" : "No data",
       trend: "down", 
       icon: Calendar,

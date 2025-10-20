@@ -10,6 +10,8 @@ interface MerchantProfile {
   last_name: string;
   company_name: string;
   email: string;
+  api_key: string;
+  domain: string;
   created_at: string;
   updated_at: string;
 }

@@ -15,21 +15,51 @@ import {
   Package
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useVendor } from "@/contexts/VendorContext";
+import { useAuth } from "@/hooks/useAuth";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 const VendorIntegration = () => {
-  const { 
-    isConnected, 
-    setIsConnected, 
-    websiteUrl, 
-    setWebsiteUrl, 
-    apiKey, 
-    setApiKey 
-  } = useVendor();
+  const { user } = useAuth();
+  const [apiKey, setApiKey] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [isConnected, setIsConnected] = useState(false);
   const { toast } = useToast();
 
-  const generateApiKey = () => {
+  useEffect(() => {
+    if (user?.merchantProfile) {
+      setApiKey(user.merchantProfile.api_key || "");
+      setWebsiteUrl(user.merchantProfile.domain || "");
+      setIsConnected(!!user.merchantProfile.api_key);
+    }
+  }, [user]);
+
+  const generateApiKey = async () => {
+    if (!user?.merchantProfile?.id) {
+      toast({
+        title: "Error",
+        description: "Please complete your merchant profile first.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     const newKey = `af_${Math.random().toString(36).substr(2, 32)}`;
+    
+    const { error } = await supabase
+      .from('merchants')
+      .update({ api_key: newKey })
+      .eq('id', user.merchantProfile.id);
+
+    if (error) {
+      toast({
+        title: "Error",
+        description: "Failed to generate API key.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setApiKey(newKey);
     toast({
       title: "API Key Generated",
@@ -45,11 +75,25 @@ const VendorIntegration = () => {
     });
   };
 
-  const connectWebsite = () => {
-    if (!websiteUrl || !apiKey) {
+  const connectWebsite = async () => {
+    if (!websiteUrl || !apiKey || !user?.merchantProfile?.id) {
       toast({
         title: "Missing Information",
         description: "Please provide both website URL and API key.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const { error } = await supabase
+      .from('merchants')
+      .update({ domain: websiteUrl, is_active: true })
+      .eq('id', user.merchantProfile.id);
+
+    if (error) {
+      toast({
+        title: "Error",
+        description: "Failed to connect website.",
         variant: "destructive"
       });
       return;

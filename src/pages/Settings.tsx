@@ -7,40 +7,36 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 const Settings = () => {
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState({
     fraudAlerts: true,
     systemUpdates: false,
     reportGeneration: true,
   });
   const [profile, setProfile] = useState({ firstName: '', lastName: '', email: '', company: '' });
-  const [apiKey, setApiKey] = useState<string>(localStorage.getItem('af_api_key') || '');
   const [system, setSystem] = useState({ maintenanceMode: false, autoUpdates: true });
   const { toast } = useToast();
 
   useEffect(() => {
-    // Load from auth user if available, otherwise from localStorage
-    const userData = localStorage.getItem('user');
-    const savedProfile = localStorage.getItem('af_profile');
+    if (user?.merchantProfile) {
+      setProfile({
+        firstName: user.merchantProfile.first_name || '',
+        lastName: user.merchantProfile.last_name || '',
+        email: user.merchantProfile.email || '',
+        company: user.merchantProfile.company_name || ''
+      });
+    }
+    
     const savedNotifications = localStorage.getItem('af_notifications');
     const savedSystem = localStorage.getItem('af_system');
     
-    if (userData) {
-      const user = JSON.parse(userData);
-      setProfile({
-        firstName: user.firstName || '',
-        lastName: user.lastName || '',
-        email: user.email || '',
-        company: user.company || ''
-      });
-    } else if (savedProfile) {
-      setProfile(JSON.parse(savedProfile));
-    }
-    
     if (savedNotifications) setNotifications(JSON.parse(savedNotifications));
     if (savedSystem) setSystem(JSON.parse(savedSystem));
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     localStorage.setItem('af_notifications', JSON.stringify(notifications));
@@ -96,8 +92,24 @@ const Settings = () => {
                 <Label htmlFor="company">Company</Label>
                 <Input id="company" value={profile.company} onChange={(e) => setProfile({ ...profile, company: e.target.value })} />
               </div>
-              <Button onClick={() => {
-                localStorage.setItem('af_profile', JSON.stringify(profile));
+              <Button onClick={async () => {
+                if (!user?.merchantProfile?.id) return;
+                
+                const { error } = await supabase
+                  .from('merchants')
+                  .update({
+                    first_name: profile.firstName,
+                    last_name: profile.lastName,
+                    email: profile.email,
+                    company_name: profile.company
+                  })
+                  .eq('id', user.merchantProfile.id);
+
+                if (error) {
+                  toast({ title: 'Error', description: 'Failed to update profile.', variant: 'destructive' });
+                  return;
+                }
+
                 toast({ title: 'Profile Updated', description: 'Your profile has been saved.' });
               }}>Update Profile</Button>
             </CardContent>
@@ -198,26 +210,35 @@ const Settings = () => {
               <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
                 <div>
                   <h4 className="font-medium">Current API Key</h4>
-                  <p className="text-sm text-muted-foreground">
-                    {apiKey ? `${apiKey.substring(0, 6)}••••••••••••${apiKey.substring(apiKey.length - 4)}` : 'No key generated'}
+                  <p className="text-sm text-muted-foreground font-mono">
+                    {user?.merchantProfile?.api_key 
+                      ? `${user.merchantProfile.api_key.substring(0, 8)}••••••••••••${user.merchantProfile.api_key.substring(user.merchantProfile.api_key.length - 4)}` 
+                      : 'No key generated'}
                   </p>
                 </div>
                 <div className="flex space-x-2">
-                  <Button variant="outline" onClick={() => {
-                    const newKey = `af_${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}`;
-                    setApiKey(newKey);
-                    localStorage.setItem('af_api_key', newKey);
+                  <Button variant="outline" onClick={async () => {
+                    if (!user?.merchantProfile?.id) return;
+                    
+                    const newKey = `af_${Math.random().toString(36).slice(2, 32)}`;
+                    const { error } = await supabase
+                      .from('merchants')
+                      .update({ api_key: newKey })
+                      .eq('id', user.merchantProfile.id);
+
+                    if (error) {
+                      toast({ title: 'Error', description: 'Failed to generate API key.', variant: 'destructive' });
+                      return;
+                    }
+
                     toast({ title: 'API Key Generated', description: 'Store this key securely.' });
                   }}>Generate</Button>
-                  <Button variant="outline" disabled={!apiKey} onClick={() => {
-                    navigator.clipboard.writeText(apiKey);
-                    toast({ title: 'Copied', description: 'API key copied to clipboard.' });
+                  <Button variant="outline" disabled={!user?.merchantProfile?.api_key} onClick={() => {
+                    if (user?.merchantProfile?.api_key) {
+                      navigator.clipboard.writeText(user.merchantProfile.api_key);
+                      toast({ title: 'Copied', description: 'API key copied to clipboard.' });
+                    }
                   }}>Copy</Button>
-                  <Button variant="destructive" disabled={!apiKey} onClick={() => {
-                    setApiKey('');
-                    localStorage.removeItem('af_api_key');
-                    toast({ title: 'Revoked', description: 'API key has been revoked.' });
-                  }}>Revoke</Button>
                 </div>
               </div>
             </CardContent>
