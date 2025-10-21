@@ -164,18 +164,26 @@ serve(async (req) => {
       fraudAnalysis.should_flag
     );
 
-    // 8. Create fraud alert if high risk
+    // 8. Generate AI explanation if fraud detected
+    let aiExplanation = null;
     if (fraudAnalysis.should_block || fraudAnalysis.should_flag) {
+      aiExplanation = await generateFraudExplanation(
+        requestData,
+        fraudAnalysis,
+        customerProfile
+      );
+
       await supabaseClient.from('fraud_alerts').insert({
         transaction_id: transaction.id,
         merchant_id: merchant.id,
         alert_type: fraudAnalysis.should_block ? 'blocked_transaction' : 'flagged_transaction',
         severity: fraudAnalysis.risk_level,
-        message: `Transaction ${fraudAnalysis.should_block ? 'blocked' : 'flagged'} - Fraud score: ${fraudAnalysis.score}`,
+        message: aiExplanation?.summary || `Transaction ${fraudAnalysis.should_block ? 'blocked' : 'flagged'} - Fraud score: ${fraudAnalysis.score}`,
         details: {
           reasons: fraudAnalysis.reasons,
           customer_email: requestData.customer_email,
-          amount: requestData.amount
+          amount: requestData.amount,
+          ai_explanation: aiExplanation
         }
       });
     }
@@ -198,6 +206,7 @@ serve(async (req) => {
         fraud_score: fraudAnalysis.score,
         risk_level: fraudAnalysis.risk_level,
         reasons: fraudAnalysis.reasons,
+        explanation: aiExplanation,
         recommendation: fraudAnalysis.should_block ? 'BLOCK_PAYMENT' : 
                        fraudAnalysis.should_flag ? 'MANUAL_REVIEW' : 'APPROVE_PAYMENT'
       }),
@@ -493,6 +502,107 @@ async function createBlockedTransaction(
     .single();
 
   return transaction;
+}
+
+async function generateFraudExplanation(
+  request: TransactionRequest,
+  fraudAnalysis: any,
+  customerProfile: any
+) {
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  if (!LOVABLE_API_KEY) {
+    console.warn('LOVABLE_API_KEY not configured, skipping AI explanation');
+    return null;
+  }
+
+  try {
+    const prompt = `You are an explainable AI fraud detection system. Explain why this transaction was ${fraudAnalysis.should_block ? 'BLOCKED' : 'FLAGGED'} in clear, customer-friendly language.
+
+Transaction Details:
+- Amount: $${request.amount}
+- Customer Email: ${request.customer_email}
+- Location: ${request.customer_location?.city}, ${request.customer_location?.country}
+- Payment Method: ${request.payment_method}
+
+Fraud Analysis:
+- Fraud Score: ${fraudAnalysis.score}/100
+- Risk Level: ${fraudAnalysis.risk_level}
+- Detected Patterns: ${fraudAnalysis.reasons.join(', ')}
+
+Customer History:
+- Total Transactions: ${customerProfile.total_transactions}
+- Trust Score: ${customerProfile.trust_score}/100
+- Previous Flags: ${customerProfile.flagged_count}
+- Previous Blocks: ${customerProfile.blocked_count}
+
+Provide:
+1. A brief summary (1-2 sentences) explaining the decision
+2. Key risk factors (3-5 bullet points)
+3. What the customer should do next
+
+Be professional, clear, and helpful. Don't use technical jargon.`;
+
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          { role: 'system', content: 'You are an explainable AI fraud detection expert. Provide clear, customer-friendly explanations.' },
+          { role: 'user', content: prompt }
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('AI explanation generation failed:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    const explanation = data.choices[0].message.content;
+
+    // Parse the explanation into structured format
+    const lines = explanation.split('\n').filter((l: string) => l.trim());
+    let summary = '';
+    const keyFactors: string[] = [];
+    let nextSteps = '';
+
+    let currentSection = '';
+    for (const line of lines) {
+      if (line.includes('summary') || line.includes('Summary')) {
+        currentSection = 'summary';
+      } else if (line.includes('risk factor') || line.includes('Key Risk')) {
+        currentSection = 'factors';
+      } else if (line.includes('next') || line.includes('should do')) {
+        currentSection = 'next';
+      } else if (line.trim().startsWith('-') || line.trim().startsWith('•') || line.trim().match(/^\d\./)) {
+        if (currentSection === 'factors') {
+          keyFactors.push(line.trim().replace(/^[-•\d.]\s*/, ''));
+        }
+      } else if (line.trim()) {
+        if (currentSection === 'summary' && !summary) {
+          summary = line.trim();
+        } else if (currentSection === 'next' && !nextSteps) {
+          nextSteps = line.trim();
+        }
+      }
+    }
+
+    return {
+      summary: summary || `This transaction was ${fraudAnalysis.should_block ? 'blocked' : 'flagged'} due to suspicious activity patterns.`,
+      key_factors: keyFactors.length > 0 ? keyFactors : fraudAnalysis.reasons,
+      next_steps: nextSteps || 'Please contact the merchant for assistance or try a different payment method.',
+      full_explanation: explanation
+    };
+
+  } catch (error) {
+    console.error('Error generating AI explanation:', error);
+    return null;
+  }
 }
 
 function extractFeatures(request: TransactionRequest, profile: any) {

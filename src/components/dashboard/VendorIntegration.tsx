@@ -149,12 +149,19 @@ document.getElementById('checkout-form').addEventListener('submit', async (e) =>
   });
 
   if (result.status === 'blocked') {
-    alert('Payment blocked: ' + result.message);
+    // Show detailed fraud explanation
+    const message = result.explanation 
+      ? result.explanation.summary + '\\n\\nReason: ' + result.explanation.key_factors.join(', ')
+      : 'Payment blocked due to fraud detection';
+    alert('❌ PAYMENT BLOCKED\\n\\n' + message);
     return;
   }
 
   if (result.status === 'flagged') {
-    if (!confirm('This transaction requires verification. Continue?')) {
+    const message = result.explanation 
+      ? result.explanation.summary + '\\n\\nThis transaction requires verification.\\n\\n' + result.explanation.next_steps
+      : 'This transaction has been flagged for review';
+    if (!confirm('⚠️ VERIFICATION REQUIRED\\n\\n' + message + '\\n\\nContinue?')) {
       return;
     }
   }
@@ -216,13 +223,27 @@ $result = $fraudDetector->checkTransaction([
 ]);
 
 if ($result['status'] === 'blocked') {
+    // Show detailed fraud explanation to customer
+    $message = isset($result['explanation']) 
+        ? $result['explanation']['summary'] 
+        : 'Payment blocked due to fraud detection';
+    
     http_response_code(403);
-    die(json_encode(['error' => $result['message']]));
+    die(json_encode([
+        'error' => 'Payment Blocked',
+        'message' => $message,
+        'explanation' => $result['explanation'] ?? null,
+        'fraud_score' => $result['fraud_score']
+    ]));
 }
 
 if ($result['status'] === 'flagged') {
-    // Log for review or require additional verification
+    // Log for review and show warning to customer
     error_log('Flagged: ' . json_encode($result));
+    $warningMessage = isset($result['explanation']) 
+        ? $result['explanation']['summary'] 
+        : 'This transaction requires verification';
+    // Display warning message and require additional verification
 }
 
 // Proceed with payment
@@ -363,13 +384,51 @@ if (signature === expected) {
 
       {/* Step 3: Integration Code */}
       {apiKey && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Step 3: Add Integration Code</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Copy and paste this code into your website to start detecting fraud
-            </p>
-          </CardHeader>
+        <>
+          <Card className="bg-safe/5 border-safe">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-safe" />
+                AI-Powered Fraud Detection
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm">
+                When fraud is detected, customers see clear, AI-generated explanations:
+              </p>
+              <div className="bg-background p-4 rounded-lg border space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-1 h-full bg-suspicious rounded"></div>
+                  <div>
+                    <p className="font-semibold text-suspicious mb-2">❌ Payment Blocked</p>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      "This transaction was blocked due to multiple suspicious activity patterns detected in real-time."
+                    </p>
+                    <p className="text-xs font-semibold mb-1">Key Risk Factors:</p>
+                    <ul className="text-xs text-muted-foreground space-y-1 ml-4">
+                      <li>• Unusually high transaction amount compared to customer history</li>
+                      <li>• Multiple transactions within short time period</li>
+                      <li>• Location differs from known customer locations</li>
+                    </ul>
+                    <p className="text-xs text-muted-foreground mt-3">
+                      💡 Next Steps: Please contact customer support for assistance or try a different payment method.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                ✨ Powered by Lovable AI - provides clear explanations instead of confusing error codes
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Step 3: Add Integration Code</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Copy and paste this code into your website to start detecting fraud with AI explanations
+              </p>
+            </CardHeader>
           
           <CardContent>
             <Tabs defaultValue="javascript" className="space-y-4">
@@ -435,6 +494,7 @@ if (signature === expected) {
             </Tabs>
           </CardContent>
         </Card>
+        </>
       )}
     </div>
   );
