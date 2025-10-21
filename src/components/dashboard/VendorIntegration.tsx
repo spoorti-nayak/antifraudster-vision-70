@@ -2,19 +2,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Key, 
-  Settings, 
   Copy, 
   CheckCircle, 
   Shield,
   Globe,
-  CreditCard,
-  Package
+  AlertCircle
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,23 +21,18 @@ const VendorIntegration = () => {
   const [apiKey, setApiKey] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [isConnected, setIsConnected] = useState(false);
-  const { toast } = useToast();
 
   useEffect(() => {
     if (user?.merchantProfile) {
       setApiKey(user.merchantProfile.api_key || "");
       setWebsiteUrl(user.merchantProfile.domain || "");
-      setIsConnected(!!user.merchantProfile.api_key);
+      setIsConnected(!!user.merchantProfile.api_key && !!user.merchantProfile.domain);
     }
   }, [user]);
 
   const generateApiKey = async () => {
-    if (!user?.merchantProfile?.id) {
-      toast({
-        title: "Error",
-        description: "Please complete your merchant profile first.",
-        variant: "destructive"
-      });
+    if (!user?.id) {
+      toast.error("Please log in first");
       return;
     }
 
@@ -49,205 +41,263 @@ const VendorIntegration = () => {
     const { error } = await supabase
       .from('merchants')
       .update({ api_key: newKey })
-      .eq('id', user.merchantProfile.id);
+      .eq('user_id', user.id);
 
     if (error) {
-      toast({
-        title: "Error",
-        description: "Failed to generate API key.",
-        variant: "destructive"
-      });
+      console.error('Error generating API key:', error);
+      toast.error("Failed to generate API key");
       return;
     }
 
     setApiKey(newKey);
-    toast({
-      title: "API Key Generated",
-      description: "Your new API key has been generated successfully.",
-    });
+    toast.success("API key generated successfully!");
   };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    toast({
-      title: "Copied!",
-      description: "API key copied to clipboard.",
-    });
+    toast.success("Copied to clipboard!");
   };
 
   const connectWebsite = async () => {
-    if (!websiteUrl || !apiKey || !user?.merchantProfile?.id) {
-      toast({
-        title: "Missing Information",
-        description: "Please provide both website URL and API key.",
-        variant: "destructive"
-      });
+    if (!websiteUrl) {
+      toast.error("Please enter your website URL");
       return;
     }
 
-    const { error } = await supabase
-      .from('merchants')
-      .update({ domain: websiteUrl, is_active: true })
-      .eq('id', user.merchantProfile.id);
-
-    if (error) {
-      toast({
-        title: "Error",
-        description: "Failed to connect website.",
-        variant: "destructive"
-      });
+    // Validate URL format
+    try {
+      new URL(websiteUrl);
+    } catch {
+      toast.error("Please enter a valid URL (e.g., https://mystore.com)");
       return;
     }
-    
-    setIsConnected(true);
-    toast({
-      title: "Website Connected",
-      description: "Your website is now protected by Antifraudster.",
-    });
+
+    if (!user?.id) {
+      toast.error("Please log in first");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('merchants')
+        .update({ 
+          domain: websiteUrl,
+          is_active: true 
+        })
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      setIsConnected(true);
+      toast.success("Website connected! Now add the integration code to your site.");
+    } catch (error) {
+      console.error('Error connecting website:', error);
+      toast.error("Failed to connect website");
+    }
   };
 
-
-  const jsIntegrationCode = `// Install the Antifraudster SDK
-npm install @antifraudster/sdk
-
-// Initialize the SDK
-import { Antifraudster } from '@antifraudster/sdk';
-
-const fraudDetector = new Antifraudster({
-  apiKey: '${apiKey || 'YOUR_API_KEY'}',
-  endpoint: 'https://api.antifraudster.com/v1'
-});
-
-// Check transaction before processing payment
-const checkTransaction = async (transactionData) => {
-  try {
-    const result = await fraudDetector.analyze({
-      buyerEmail: transactionData.email,
-      amount: transactionData.amount,
-      paymentMethod: transactionData.paymentMethod,
-      ipAddress: transactionData.ipAddress,
-      deviceFingerprint: transactionData.deviceId,
-      billingAddress: transactionData.billingAddress,
-      shippingAddress: transactionData.shippingAddress
-    });
-    
-    if (result.status === 'fraud') {
-      // Block transaction
-      throw new Error(result.explanation);
-    }
-    
-    // Allow transaction to proceed
-    return result;
-  } catch (error) {
-    console.error('Fraud detection error:', error);
-    // Handle error appropriately
+  // Real API endpoint
+  const apiEndpoint = `https://xvelszpgrkmkdpgzadrs.supabase.co/functions/v1/analyze-transaction`;
+  
+  const javascriptCode = `
+<!-- Step 1: Add this script before closing </body> tag -->
+<script>
+class AntiFraudDetection {
+  constructor(apiKey) {
+    this.apiKey = apiKey;
+    this.endpoint = '${apiEndpoint}';
   }
-};`;
 
-  const phpIntegrationCode = `<?php
-// Install via Composer
-composer require antifraudster/php-sdk
-
-use Antifraudster\\Client;
-
-$fraudDetector = new Client([
-    'api_key' => '${apiKey || 'YOUR_API_KEY'}',
-    'endpoint' => 'https://api.antifraudster.com/v1'
-]);
-
-function checkTransaction($transactionData) {
-    global $fraudDetector;
-    
+  async checkTransaction(transactionData) {
     try {
-        $result = $fraudDetector->analyze([
-            'buyer_email' => $transactionData['email'],
-            'amount' => $transactionData['amount'],
-            'payment_method' => $transactionData['payment_method'],
-            'ip_address' => $_SERVER['REMOTE_ADDR'],
-            'device_fingerprint' => $transactionData['device_id'],
-            'billing_address' => $transactionData['billing_address'],
-            'shipping_address' => $transactionData['shipping_address']
+      const response = await fetch(this.endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + this.apiKey
+        },
+        body: JSON.stringify(transactionData)
+      });
+
+      return await response.json();
+    } catch (error) {
+      console.error('Fraud check failed:', error);
+      return { status: 'error', message: 'Failed to verify transaction' };
+    }
+  }
+}
+
+// Initialize
+const fraudDetector = new AntiFraudDetection('${apiKey || 'YOUR_API_KEY'}');
+
+// Step 2: Call before payment processing
+document.getElementById('checkout-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  
+  const result = await fraudDetector.checkTransaction({
+    amount: parseFloat(document.getElementById('amount').value),
+    currency: 'USD',
+    customer_email: document.getElementById('email').value,
+    customer_ip: '{{USER_IP}}', // Get from server
+    customer_device: navigator.userAgent,
+    payment_method: 'credit_card',
+    card_last4: document.getElementById('card').value.slice(-4),
+    customer_location: {
+      country: 'US',
+      city: 'New York'
+    }
+  });
+
+  if (result.status === 'blocked') {
+    alert('Payment blocked: ' + result.message);
+    return;
+  }
+
+  if (result.status === 'flagged') {
+    if (!confirm('This transaction requires verification. Continue?')) {
+      return;
+    }
+  }
+
+  // Proceed with payment
+  processPayment();
+});
+</script>
+  `.trim();
+
+  const phpCode = `
+<?php
+// Step 1: Add this class to your PHP project
+class AntiFraudDetection {
+    private $apiKey;
+    private $endpoint = '${apiEndpoint}';
+
+    public function __construct($apiKey) {
+        $this->apiKey = $apiKey;
+    }
+
+    public function checkTransaction($data) {
+        $ch = curl_init($this->endpoint);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $this->apiKey
         ]);
-        
-        if ($result['status'] === 'fraud') {
-            throw new Exception($result['explanation']);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($httpCode !== 200) {
+            return ['status' => 'error', 'message' => 'Failed to verify'];
         }
-        
-        return $result;
-    } catch (Exception $e) {
-        error_log('Fraud detection error: ' . $e->getMessage());
-        throw $e;
+
+        return json_decode($response, true);
     }
 }
-?>`;
 
-  const restApiCode = `# REST API Integration
-curl -X POST https://api.antifraudster.com/v1/analyze \\
-  -H "Authorization: Bearer ${apiKey || 'YOUR_API_KEY'}" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "buyer_email": "customer@email.com",
-    "amount": 99.99,
-    "payment_method": "credit_card",
-    "ip_address": "192.168.1.1",
-    "device_fingerprint": "abc123",
-    "billing_address": {
-      "street": "123 Main St",
-      "city": "City",
-      "country": "US"
-    },
-    "shipping_address": {
-      "street": "123 Main St", 
-      "city": "City",
-      "country": "US"
-    }
-  }'
+// Step 2: Use before payment processing
+$fraudDetector = new AntiFraudDetection('${apiKey || 'YOUR_API_KEY'}');
 
-# Response
+$result = $fraudDetector->checkTransaction([
+    'amount' => $_POST['amount'],
+    'currency' => 'USD',
+    'customer_email' => $_POST['email'],
+    'customer_ip' => $_SERVER['REMOTE_ADDR'],
+    'customer_device' => $_SERVER['HTTP_USER_AGENT'],
+    'payment_method' => 'credit_card',
+    'card_last4' => substr($_POST['card_number'], -4),
+    'customer_location' => [
+        'country' => $_POST['country'],
+        'city' => $_POST['city']
+    ]
+]);
+
+if ($result['status'] === 'blocked') {
+    http_response_code(403);
+    die(json_encode(['error' => $result['message']]));
+}
+
+if ($result['status'] === 'flagged') {
+    // Log for review or require additional verification
+    error_log('Flagged: ' . json_encode($result));
+}
+
+// Proceed with payment
+processPayment($_POST);
+?>
+  `.trim();
+
+  const webhookCode = `
+# Webhook Configuration (Optional)
+# Receive real-time fraud alerts at your endpoint
+
+POST https://your-site.com/webhook/fraud-alerts
+Headers:
+  X-Antifraud-Signature: HMAC-SHA256 signature
+  Content-Type: application/json
+
+Payload:
 {
-  "status": "safe",
-  "risk_score": 15.2,
-  "explanation": "Normal purchase pattern detected",
-  "transaction_id": "txn_abc123",
-  "recommendations": ["allow"]
-}`;
+  "event": "fraud_detected",
+  "transaction_id": "uuid",
+  "customer_email": "user@example.com",
+  "fraud_score": 85,
+  "risk_level": "high",
+  "blocked": true,
+  "timestamp": "2025-01-01T12:00:00Z"
+}
+
+# Verify webhook signature in your code:
+const crypto = require('crypto');
+const signature = req.headers['x-antifraud-signature'];
+const payload = JSON.stringify(req.body);
+const expected = crypto
+  .createHmac('sha256', '${apiKey || 'YOUR_API_KEY'}')
+  .update(payload)
+  .digest('hex');
+
+if (signature === expected) {
+  // Process webhook
+}
+  `.trim();
 
   return (
     <div className="space-y-6">
       {/* Integration Setup */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Settings className="h-5 w-5" />
-            <span>Vendor Integration Setup</span>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            <span>Connect Your E-Commerce Site</span>
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Connect your e-commerce website to Antifraudster's fraud detection system
+            3-step process: Generate API key → Add website URL → Integrate code into your site
           </p>
         </CardHeader>
         
         <CardContent className="space-y-6">
-          {/* API Key Generation */}
+          {/* Step 1: API Key */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <Label htmlFor="apiKey" className="text-base font-medium">API Key</Label>
+              <Label className="text-base font-medium">Step 1: Generate API Key</Label>
               <Button 
                 variant="outline" 
                 size="sm" 
                 onClick={generateApiKey}
-                className="ml-4"
               >
                 <Key className="h-4 w-4 mr-2" />
-                Generate Key
+                Generate New Key
               </Button>
             </div>
             
-            <div className="flex space-x-2">
+            <div className="flex gap-2">
               <Input
-                id="apiKey"
                 value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="af_your_api_key_here"
+                readOnly
+                placeholder="Click 'Generate New Key' to create your API key"
                 className="font-mono text-sm"
               />
               {apiKey && (
@@ -262,12 +312,11 @@ curl -X POST https://api.antifraudster.com/v1/analyze \\
             </div>
           </div>
 
-          {/* Website URL */}
+          {/* Step 2: Website URL */}
           <div className="space-y-2">
-            <Label htmlFor="websiteUrl" className="text-base font-medium">Website URL</Label>
-            <div className="flex space-x-2">
+            <Label className="text-base font-medium">Step 2: Add Your Website URL</Label>
+            <div className="flex gap-2">
               <Input
-                id="websiteUrl"
                 value={websiteUrl}
                 onChange={(e) => setWebsiteUrl(e.target.value)}
                 placeholder="https://your-ecommerce-site.com"
@@ -293,59 +342,100 @@ curl -X POST https://api.antifraudster.com/v1/analyze \\
           </div>
 
           {isConnected && (
-            <div className="flex items-center space-x-2 p-3 bg-safe-muted border border-safe rounded-lg">
+            <div className="flex items-center gap-2 p-3 bg-safe/10 border border-safe rounded-lg">
               <CheckCircle className="h-4 w-4 text-safe" />
               <span className="text-sm text-safe font-medium">
-                Website successfully connected to Antifraudster
+                ✓ Connected! Now add the integration code below to your website
+              </span>
+            </div>
+          )}
+
+          {!apiKey && (
+            <div className="flex items-center gap-2 p-3 bg-suspicious/10 border border-suspicious rounded-lg">
+              <AlertCircle className="h-4 w-4 text-suspicious" />
+              <span className="text-sm text-suspicious">
+                Generate an API key first to begin integration
               </span>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Integration Code Examples - removed per request */}
+      {/* Step 3: Integration Code */}
+      {apiKey && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Step 3: Add Integration Code</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Copy and paste this code into your website to start detecting fraud
+            </p>
+          </CardHeader>
+          
+          <CardContent>
+            <Tabs defaultValue="javascript" className="space-y-4">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="javascript">JavaScript</TabsTrigger>
+                <TabsTrigger value="php">PHP</TabsTrigger>
+                <TabsTrigger value="webhook">Webhooks</TabsTrigger>
+              </TabsList>
 
-      {/* Integration Status & Features */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Shield className="h-5 w-5" />
-            <span>Integration Features</span>
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Your fraud detection system capabilities
-          </p>
-        </CardHeader>
-        
-        <CardContent>
-          {/* Features Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="text-center p-4 bg-muted/30 rounded-lg">
-              <Shield className="h-8 w-8 mx-auto mb-2 text-primary" />
-              <h5 className="font-medium text-sm">Real-time Protection</h5>
-              <p className="text-xs text-muted-foreground mt-1">
-                Block fraud before payment
-              </p>
-            </div>
-            
-            <div className="text-center p-4 bg-muted/30 rounded-lg">
-              <CreditCard className="h-8 w-8 mx-auto mb-2 text-primary" />
-              <h5 className="font-medium text-sm">Payment Security</h5>
-              <p className="text-xs text-muted-foreground mt-1">
-                Secure all payment methods
-              </p>
-            </div>
-            
-            <div className="text-center p-4 bg-muted/30 rounded-lg">
-              <Package className="h-8 w-8 mx-auto mb-2 text-primary" />
-              <h5 className="font-medium text-sm">Easy Integration</h5>
-              <p className="text-xs text-muted-foreground mt-1">
-                5-minute setup process
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+              <TabsContent value="javascript" className="space-y-4">
+                <div className="relative">
+                  <pre className="bg-secondary p-4 rounded-lg overflow-x-auto text-sm">
+                    <code>{javascriptCode}</code>
+                  </pre>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="absolute top-2 right-2"
+                    onClick={() => copyToClipboard(javascriptCode)}
+                  >
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="php" className="space-y-4">
+                <div className="relative">
+                  <pre className="bg-secondary p-4 rounded-lg overflow-x-auto text-sm">
+                    <code>{phpCode}</code>
+                  </pre>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="absolute top-2 right-2"
+                    onClick={() => copyToClipboard(phpCode)}
+                  >
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="webhook" className="space-y-4">
+                <div className="relative">
+                  <pre className="bg-secondary p-4 rounded-lg overflow-x-auto text-sm">
+                    <code>{webhookCode}</code>
+                  </pre>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="absolute top-2 right-2"
+                    onClick={() => copyToClipboard(webhookCode)}
+                  >
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Configure your webhook URL in the Settings tab to receive real-time fraud alerts
+                </p>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };
