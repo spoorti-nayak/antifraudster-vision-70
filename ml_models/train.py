@@ -11,9 +11,14 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.svm import SVC
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neural_network import MLPClassifier
 import joblib
 import os
 from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
 
 # Create directories if they don't exist
 os.makedirs('trained_models', exist_ok=True)
@@ -176,6 +181,62 @@ results['gradient_boosting'] = {
 print(f"   ✅ Accuracy: {results['gradient_boosting']['accuracy']:.2%}")
 print(f"   ✅ AUC-ROC: {results['gradient_boosting']['auc']:.3f}")
 
+# Model 4: Support Vector Machine (SVM)
+print("\n4️⃣  Training Support Vector Machine...")
+svm_model = SVC(
+    kernel='rbf',
+    probability=True,
+    random_state=42,
+    C=1.0,
+    gamma='scale'
+)
+svm_model.fit(X_train_scaled, y_train)
+svm_pred = svm_model.predict(X_test_scaled)
+svm_proba = svm_model.predict_proba(X_test_scaled)[:, 1]
+models['svm'] = svm_model
+results['svm'] = {
+    'accuracy': svm_model.score(X_test_scaled, y_test),
+    'auc': roc_auc_score(y_test, svm_proba)
+}
+print(f"   ✅ Accuracy: {results['svm']['accuracy']:.2%}")
+print(f"   ✅ AUC-ROC: {results['svm']['auc']:.3f}")
+
+# Model 5: Naive Bayes
+print("\n5️⃣  Training Naive Bayes...")
+nb_model = GaussianNB()
+nb_model.fit(X_train_scaled, y_train)
+nb_pred = nb_model.predict(X_test_scaled)
+nb_proba = nb_model.predict_proba(X_test_scaled)[:, 1]
+models['naive_bayes'] = nb_model
+results['naive_bayes'] = {
+    'accuracy': nb_model.score(X_test_scaled, y_test),
+    'auc': roc_auc_score(y_test, nb_proba)
+}
+print(f"   ✅ Accuracy: {results['naive_bayes']['accuracy']:.2%}")
+print(f"   ✅ AUC-ROC: {results['naive_bayes']['auc']:.3f}")
+
+# Model 6: Neural Network (MLP)
+print("\n6️⃣  Training Neural Network (MLP)...")
+nn_model = MLPClassifier(
+    hidden_layer_sizes=(64, 32, 16),
+    activation='relu',
+    solver='adam',
+    max_iter=500,
+    random_state=42,
+    early_stopping=True,
+    validation_fraction=0.1
+)
+nn_model.fit(X_train_scaled, y_train)
+nn_pred = nn_model.predict(X_test_scaled)
+nn_proba = nn_model.predict_proba(X_test_scaled)[:, 1]
+models['neural_network'] = nn_model
+results['neural_network'] = {
+    'accuracy': nn_model.score(X_test_scaled, y_test),
+    'auc': roc_auc_score(y_test, nn_proba)
+}
+print(f"   ✅ Accuracy: {results['neural_network']['accuracy']:.2%}")
+print(f"   ✅ AUC-ROC: {results['neural_network']['auc']:.3f}")
+
 # Step 6: Select Best Model
 print("\n🏆 Step 6: Selecting Best Model...")
 best_model_name = max(results, key=lambda x: results[x]['auc'])
@@ -191,6 +252,9 @@ timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 joblib.dump(models['logistic'], 'trained_models/logistic_model.pkl')
 joblib.dump(models['random_forest'], 'trained_models/rf_model.pkl')
 joblib.dump(models['gradient_boosting'], 'trained_models/gb_model.pkl')
+joblib.dump(models['svm'], 'trained_models/svm_model.pkl')
+joblib.dump(models['naive_bayes'], 'trained_models/nb_model.pkl')
+joblib.dump(models['neural_network'], 'trained_models/nn_model.pkl')
 joblib.dump(scaler, 'trained_models/scaler.pkl')
 
 # Save best model separately
@@ -211,6 +275,9 @@ print("✅ Saved models:")
 print("   - trained_models/logistic_model.pkl")
 print("   - trained_models/rf_model.pkl")
 print("   - trained_models/gb_model.pkl")
+print("   - trained_models/svm_model.pkl")
+print("   - trained_models/nb_model.pkl")
+print("   - trained_models/nn_model.pkl")
 print("   - trained_models/best_model.pkl")
 print("   - trained_models/scaler.pkl")
 print("   - trained_models/metadata.pkl")
