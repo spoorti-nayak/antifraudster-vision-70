@@ -3,5 +3,8 @@ project_id = "xvelszpgrkmkdpgzadrs"
 [functions.analyze-transaction]
 verify_jwt = false
 
+[functions.ml-predict]
+verify_jwt = false
+
 [functions.send-webhook]
 verify_jwt = false

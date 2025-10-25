@@ -107,14 +107,14 @@ const Index = () => {
 
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center animate-fade-in" style={{ animationDelay: "0.8s" }}>
-            <Link to="/signup">
+            <Link to="/shop">
               <Button className="gradient-primary hover:opacity-90 transition-all duration-300 px-8 py-3 text-lg font-medium shadow-lg hover:shadow-xl hover:scale-105">
-                Start Protecting Now
+                Try Demo Store
               </Button>
             </Link>
-            <Link to="/login">
+            <Link to="/dashboard">
               <Button variant="outline" className="px-8 py-3 text-lg font-medium border-primary/20 hover:bg-primary/5 hover:border-primary/40 transition-all duration-300">
-                Sign In
+                Admin Dashboard
               </Button>
             </Link>
           </div>
