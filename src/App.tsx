@@ -13,9 +13,6 @@ import FraudAlerts from "./pages/FraudAlerts";
 import Analytics from "./pages/Analytics";
 import Vendors from "./pages/Vendors";
 import Settings from "./pages/Settings";
-import Shop from "./pages/Shop";
-import Cart from "./pages/Cart";
-import Checkout from "./pages/Checkout";
 import NotFound from "./pages/NotFound";
 import DashboardLayout from "./layout/DashboardLayout";
 
@@ -32,9 +29,6 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
-            <Route path="/shop" element={<Shop />} />
-            <Route path="/cart" element={<Cart />} />
-            <Route path="/checkout" element={<Checkout />} />
             <Route path="/" element={<DashboardLayout />}>
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="transactions" element={<Transactions />} />
