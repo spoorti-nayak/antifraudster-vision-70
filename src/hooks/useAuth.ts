@@ -39,6 +39,7 @@ interface AuthContextType {
   }) => Promise<void>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null);
@@ -163,10 +164,18 @@ export const useAuthProvider = () => {
     try {
       setIsLoading(true);
       
-      // Sign up the user
+      // Sign up the user with proper email redirect
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: userData.email,
         password: userData.password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/dashboard`,
+          data: {
+            first_name: userData.firstName,
+            last_name: userData.lastName,
+            company_name: userData.company,
+          }
+        }
       });
 
       if (authError) throw authError;
@@ -239,6 +248,14 @@ export const useAuthProvider = () => {
     }
   };
 
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    
+    if (error) throw error;
+  };
+
   return {
     user,
     isLoading,
@@ -247,5 +264,6 @@ export const useAuthProvider = () => {
     register,
     logout,
     refreshAuth,
+    resetPassword,
   };
 };
