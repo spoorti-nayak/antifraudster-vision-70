@@ -79,56 +79,137 @@ npm run dev -- --port 3000
 - Check for errors
 - Verify all dependencies installed: `npm install`
 
-## Next Steps - Working with ML Models
+## Next Steps - ML Models Setup in Anaconda
 
-After your app is running successfully in VS Code, you can set up the ML models in Anaconda:
+After `npm run dev` is running in VS Code, follow these steps in Anaconda:
 
 ### 1. Install Anaconda
 Download from: https://www.anaconda.com/download
 
-### 2. Create ML Environment
+### 2. Open Anaconda Prompt in YOUR Project Folder
+
+**CRITICAL**: You must navigate to your project root first!
+
+**Windows:**
+```bash
+# Open Anaconda Prompt, then navigate to your project
+# Example - replace with YOUR actual path:
+cd C:\Users\YourName\Documents\fraud-detection-system
+```
+
+**Mac/Linux:**
+```bash
+# Open Terminal, then navigate to your project
+# Example - replace with YOUR actual path:
+cd ~/Documents/fraud-detection-system
+```
+
+**Verify you're in the right folder:**
+```bash
+dir          # Windows - you should see ml_models folder
+ls           # Mac/Linux - you should see ml_models folder
+```
+
+### 3. Create Python Environment
 
 ```bash
-# Open Anaconda Prompt and run:
-conda create -n fraud_ml python=3.9
+# Create environment with Python 3.10
+conda create -n fraud_ml python=3.10 -y
+
+# Activate it
 conda activate fraud_ml
+```
 
-# Navigate to project folder
-cd path/to/your/project
+### 4. Install All ML Dependencies
 
-# Install ML dependencies
+```bash
+# This installs XGBoost, LightGBM, CatBoost, TensorFlow, etc. (takes 3-5 min)
 pip install -r ml_models/requirements.txt
 ```
 
-### 3. Train ML Models
+### 5. Train Advanced Production Models
 
 ```bash
-# Make sure you're in the fraud_ml environment
-conda activate fraud_ml
-
-# Train all models (creates .pkl files)
-python ml_models/train.py
+# Train all 6 advanced models + ensemble (takes 2-5 minutes)
+python ml_models/train_advanced.py
 ```
 
-This will create trained models in `ml_models/` folder:
-- `logistic_model.pkl`
-- `random_forest_model.pkl`
-- `gradient_boosting_model.pkl`
-- `svm_model.pkl`
-- `naive_bayes_model.pkl`
-- `neural_network_model.pkl`
-- `scaler.pkl`
+**What this creates:**
+- `trained_models/advanced/best_model.pkl` - Best performing model
+- `trained_models/advanced/scaler.pkl` - Feature scaler
+- `trained_models/advanced/metadata.pkl` - Performance metrics
+- Individual models: XGBoost, LightGBM, CatBoost, Random Forest, Deep NN, Isolation Forest
 
-### 4. Start ML API Server (Optional - for production)
+**Expected Output:**
+- Training metrics for all 6 models
+- AUC-ROC scores (should be 93-96%)
+- Best model selection
+
+### 6. Test the Models
 
 ```bash
-# In Anaconda Prompt with fraud_ml environment
+# Test predictions on 4 sample transactions
+python ml_models/predict_advanced.py
+```
+
+You should see fraud probability predictions with risk levels.
+
+---
+
+## How ML Models Connect to VS Code App
+
+**IMPORTANT**: They run **INDEPENDENTLY** - no connection needed!
+
+### Current State:
+- **VS Code** (`npm run dev` on port 8080): Uses **rule-based fraud detection** ✅
+- **Anaconda** (ML models): Trained and ready in `trained_models/` folder ✅
+
+### Option A: Keep Separate (Recommended)
+Your app already works with rule-based detection. ML models are trained and saved for future use.
+
+**VS Code Terminal:**
+```bash
+npm run dev              # App on http://localhost:8080
+```
+
+**Anaconda Terminal (optional):**
+```bash
+conda activate fraud_ml
+python ml_models/api_server.py   # ML API on http://localhost:8000
+```
+
+### Option B: Connect ML to App (Advanced)
+To replace rule-based with ML predictions:
+
+**1. Start ML API (Anaconda Terminal):**
+```bash
+conda activate fraud_ml
 python ml_models/api_server.py
 ```
 
-The ML API will run on `http://localhost:5000`
+**2. Update Edge Function (VS Code):**
+- Open `supabase/functions/ml-predict/index.ts`
+- Uncomment lines 33-53 (Python API integration)
+- Save the file
 
-**Note:** The fraud detection system works with rule-based detection by default. ML models are optional for enhanced accuracy.
+**3. Keep Both Running:**
+- VS Code: `npm run dev`
+- Anaconda: `python ml_models/api_server.py`
+
+Now transactions will use ML models instead of rules!
+
+---
+
+## Quick Reference
+
+| What | Where | Command |
+|------|-------|---------|
+| Web App | VS Code Terminal | `npm run dev` |
+| Train Models | Anaconda (in project folder) | `python ml_models/train_advanced.py` |
+| Test Models | Anaconda (in project folder) | `python ml_models/predict_advanced.py` |
+| ML API (optional) | Anaconda (in project folder) | `python ml_models/api_server.py` |
+
+**Bottom Line**: After running the Anaconda commands, your ML models are trained and saved. You don't need to do anything else in VS Code - the app already works!
 
 ## Project Structure
 
