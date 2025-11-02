@@ -24,9 +24,12 @@ const VendorIntegration = () => {
 
   useEffect(() => {
     if (user?.merchantProfile) {
-      setApiKey(user.merchantProfile.api_key || "");
+      // Only load website URL, not API key - user must generate it explicitly
       setWebsiteUrl(user.merchantProfile.domain || "");
-      setIsConnected(!!user.merchantProfile.api_key && !!user.merchantProfile.domain);
+      // Only show connected if BOTH api_key AND domain exist
+      const hasApiKey = !!user.merchantProfile.api_key;
+      const hasDomain = !!user.merchantProfile.domain;
+      setIsConnected(hasApiKey && hasDomain);
     }
   }, [user]);
 
@@ -336,6 +339,9 @@ if (signature === expected) {
           {/* Step 2: Website URL */}
           <div className="space-y-2">
             <Label className="text-base font-medium">Step 2: Add Your Website URL</Label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Your website domain is used for CORS validation and to link transactions to your account. This ensures only authorized requests from your domain are processed.
+            </p>
             <div className="flex gap-2">
               <Input
                 value={websiteUrl}

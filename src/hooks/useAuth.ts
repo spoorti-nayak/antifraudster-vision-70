@@ -12,6 +12,7 @@ interface MerchantProfile {
   email: string;
   api_key: string;
   domain: string;
+  webhook_url?: string;
   created_at: string;
   updated_at: string;
 }

@@ -33,12 +33,10 @@ serve(async (req) => {
     
     console.log('Sending webhook for transaction:', payload.transaction_id);
 
-    // Get merchant's webhook URL from settings
-    // In a real implementation, you'd have a settings table
-    // For now, we'll just log the webhook
+    // Get merchant's webhook URL and API key for signature
     const { data: merchant } = await supabaseClient
       .from('merchants')
-      .select('domain, api_key')
+      .select('domain, api_key, webhook_url')
       .eq('id', payload.merchant_id)
       .single();
 
@@ -65,20 +63,37 @@ serve(async (req) => {
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
 
-    // In production, you would send this to merchant's webhook URL
-    // For now, we'll just log it
     console.log('Webhook payload:', JSON.stringify(payload, null, 2));
     console.log('Webhook signature:', signatureHex);
 
-    // TODO: Send to merchant's webhook URL
-    // const response = await fetch(merchantWebhookUrl, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json',
-    //     'X-Antifraud-Signature': signatureHex,
-    //   },
-    //   body: JSON.stringify(payload),
-    // });
+    // Send webhook to merchant's configured URL if it exists
+    if (merchant.webhook_url) {
+      try {
+        const webhookResponse = await fetch(merchant.webhook_url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Antifraud-Signature': signatureHex,
+          },
+          body: JSON.stringify(payload),
+        });
+        
+        console.log('Webhook sent successfully:', {
+          url: merchant.webhook_url,
+          status: webhookResponse.status,
+          transaction_id: payload.transaction_id
+        });
+
+        if (!webhookResponse.ok) {
+          console.error('Webhook endpoint returned error:', await webhookResponse.text());
+        }
+      } catch (webhookError) {
+        console.error('Failed to send webhook:', webhookError);
+        // Don't throw - log the error but continue processing
+      }
+    } else {
+      console.log('No webhook URL configured for merchant:', payload.merchant_id);
+    }
 
     return new Response(
       JSON.stringify({ 

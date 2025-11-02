@@ -24,7 +24,7 @@ const VendorSettings = () => {
   }, [user]);
 
   const handleSaveSettings = async () => {
-    if (!user?.id) {
+    if (!user?.merchantProfile?.id) {
       toast.error("Please log in first");
       return;
     }
@@ -35,16 +35,32 @@ const VendorSettings = () => {
       if (webhookUrl) {
         try {
           new URL(webhookUrl);
-          toast.success("Webhook URL configured - you'll receive real-time fraud alerts at this endpoint");
         } catch {
-          toast.error("Invalid webhook URL format");
+          toast.error("Invalid webhook URL format - must start with https://");
           setLoading(false);
           return;
         }
       }
 
-      // In a real implementation, save these to a merchant_settings table
-      toast.success("Settings saved successfully");
+      // Save webhook URL and notification email to merchant profile
+      const { error } = await supabase
+        .from('merchants')
+        .update({ 
+          email: notificationEmail,
+          webhook_url: webhookUrl || null
+        })
+        .eq('id', user.merchantProfile.id);
+
+      if (error) throw error;
+
+      // Save local preferences
+      localStorage.setItem('af_auto_block', autoBlock.toString());
+
+      if (webhookUrl) {
+        toast.success("Settings saved! Webhook alerts will be sent to your configured endpoint with HMAC signature verification.");
+      } else {
+        toast.success("Settings saved successfully!");
+      }
     } catch (error) {
       console.error('Error saving settings:', error);
       toast.error("Failed to save settings");
@@ -52,6 +68,16 @@ const VendorSettings = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    // Load settings from merchant profile and localStorage
+    if (user?.merchantProfile) {
+      setWebhookUrl(user.merchantProfile.webhook_url || '');
+    }
+    
+    const savedAutoBlock = localStorage.getItem('af_auto_block');
+    if (savedAutoBlock) setAutoBlock(savedAutoBlock === 'true');
+  }, [user]);
 
   return (
     <div className="space-y-6">
@@ -96,27 +122,12 @@ const VendorSettings = () => {
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <Label>Auto-block High Risk Transactions</Label>
-              <p className="text-sm text-muted-foreground">Automatically block transactions above risk threshold</p>
+              <p className="text-sm text-muted-foreground">Automatically block transactions flagged as high risk by AI</p>
             </div>
             <Switch
               checked={autoBlock}
               onCheckedChange={setAutoBlock}
             />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="threshold">Risk Score Threshold</Label>
-            <Input
-              id="threshold"
-              type="number"
-              value={riskThreshold}
-              onChange={(e) => setRiskThreshold(e.target.value)}
-              min="0"
-              max="100"
-            />
-            <p className="text-xs text-muted-foreground">
-              Transactions with scores above this will be flagged/blocked (0-100)
-            </p>
           </div>
 
           <div className="space-y-2">

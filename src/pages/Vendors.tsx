@@ -34,12 +34,6 @@ const Vendors = () => {
     fetchRequestCount();
   }, [user?.merchantProfile?.id]);
 
-  const vendorStats = [
-    { label: "Active Vendors", count: 24, color: "text-safe" },
-    { label: "Pending Integration", count: 3, color: "text-suspicious" },
-    { label: "Disabled", count: 2, color: "text-muted-foreground" },
-  ];
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -47,11 +41,10 @@ const Vendors = () => {
         <div>
           <h1 className="text-3xl font-bold text-foreground flex items-center">
             <Store className="w-8 h-8 mr-3 text-primary" />
-            Vendor Management
+            API Integration
           </h1>
-          <p className="text-muted-foreground">Manage vendor integrations and API access</p>
+          <p className="text-muted-foreground">Connect your e-commerce platform to our fraud detection system</p>
         </div>
-        {/* Removed Add New Vendor button - vendors register themselves */}
       </div>
 
       {/* Integration Stats */}
@@ -63,6 +56,9 @@ const Vendors = () => {
               <p className={`text-3xl font-bold ${isConnected ? 'text-safe' : 'text-muted-foreground'}`}>
                 {isConnected ? 'Connected' : 'Not Connected'}
               </p>
+              <p className="text-xs text-muted-foreground mt-2">
+                {isConnected ? 'Your website is protected by AI fraud detection' : 'Generate API key and add your website URL to get started'}
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -72,6 +68,9 @@ const Vendors = () => {
               <p className="text-sm font-medium text-muted-foreground">API Requests Today</p>
               <p className={`text-3xl font-bold ${isConnected ? 'text-primary' : 'text-muted-foreground'}`}>
                 {isConnected ? requestCount.toLocaleString() : '0'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">
+                Transactions analyzed in real-time
               </p>
             </div>
           </CardContent>

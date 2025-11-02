@@ -204,6 +204,7 @@ export type Database = {
           name: string
           updated_at: string | null
           user_id: string | null
+          webhook_url: string | null
         }
         Insert: {
           api_key?: string
@@ -218,6 +219,7 @@ export type Database = {
           name: string
           updated_at?: string | null
           user_id?: string | null
+          webhook_url?: string | null
         }
         Update: {
           api_key?: string
@@ -232,6 +234,7 @@ export type Database = {
           name?: string
           updated_at?: string | null
           user_id?: string | null
+          webhook_url?: string | null
         }
         Relationships: []
       }

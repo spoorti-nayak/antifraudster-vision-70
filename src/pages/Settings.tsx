@@ -57,12 +57,10 @@ const Settings = () => {
 
       {/* Settings Tabs */}
       <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 glass-effect">
+        <TabsList className="grid w-full grid-cols-3 glass-effect">
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          <TabsTrigger value="api">API Keys</TabsTrigger>
-          <TabsTrigger value="system">System</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="space-y-6">
@@ -194,84 +192,6 @@ const Settings = () => {
                   }
                 />
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="api" className="space-y-6">
-          <Card className="card-3d">
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Key className="w-5 h-5 mr-2" />
-                API Key Management
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
-                <div>
-                  <h4 className="font-medium">Current API Key</h4>
-                  <p className="text-sm text-muted-foreground font-mono">
-                    {user?.merchantProfile?.api_key 
-                      ? `${user.merchantProfile.api_key.substring(0, 8)}••••••••••••${user.merchantProfile.api_key.substring(user.merchantProfile.api_key.length - 4)}` 
-                      : 'No key generated'}
-                  </p>
-                </div>
-                <div className="flex space-x-2">
-                  <Button variant="outline" onClick={async () => {
-                    if (!user?.merchantProfile?.id) return;
-                    
-                    const newKey = `af_${Math.random().toString(36).slice(2, 32)}`;
-                    const { error } = await supabase
-                      .from('merchants')
-                      .update({ api_key: newKey })
-                      .eq('id', user.merchantProfile.id);
-
-                    if (error) {
-                      toast({ title: 'Error', description: 'Failed to generate API key.', variant: 'destructive' });
-                      return;
-                    }
-
-                    toast({ title: 'API Key Generated', description: 'Store this key securely.' });
-                  }}>Generate</Button>
-                  <Button variant="outline" disabled={!user?.merchantProfile?.api_key} onClick={() => {
-                    if (user?.merchantProfile?.api_key) {
-                      navigator.clipboard.writeText(user.merchantProfile.api_key);
-                      toast({ title: 'Copied', description: 'API key copied to clipboard.' });
-                    }
-                  }}>Copy</Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="system" className="space-y-6">
-          <Card className="card-3d">
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Database className="w-5 h-5 mr-2" />
-                System Configuration
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
-                <div>
-                  <h4 className="font-medium">Maintenance Mode</h4>
-                  <p className="text-sm text-muted-foreground">Temporarily disable processing</p>
-                </div>
-                <Switch checked={system.maintenanceMode} onCheckedChange={(v) => setSystem({ ...system, maintenanceMode: v })} />
-              </div>
-              <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
-                <div>
-                  <h4 className="font-medium">Auto Updates</h4>
-                  <p className="text-sm text-muted-foreground">Keep rules and models up-to-date</p>
-                </div>
-                <Switch checked={system.autoUpdates} onCheckedChange={(v) => setSystem({ ...system, autoUpdates: v })} />
-              </div>
-              <Button onClick={() => {
-                localStorage.setItem('af_system', JSON.stringify(system));
-                toast({ title: 'System Settings Saved', description: 'Your preferences have been stored.' });
-              }}>Save Settings</Button>
             </CardContent>
           </Card>
         </TabsContent>
