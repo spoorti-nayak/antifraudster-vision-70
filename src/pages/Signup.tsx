@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +35,7 @@ const Signup = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const { register } = useAuth();
+  const navigate = useNavigate();
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -43,7 +44,6 @@ const Signup = () => {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate password
     const passwordValidation = validatePassword(formData.password);
     if (!passwordValidation.isValid) {
       toast({
@@ -74,20 +74,18 @@ const Signup = () => {
         password: formData.password,
       });
       
-      // Clear saved form data on successful signup
       localStorage.removeItem('signupFormData');
       
-      toast({
-        title: "Account Created Successfully",
-        description: "Welcome to Antifraudster! You can now access your dashboard.",
-      });
+      // Navigate after successful signup
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 100);
     } catch (error: any) {
       toast({
         title: "Registration Failed",
         description: error.message || "An error occurred during registration",
         variant: "destructive"
       });
-    } finally {
       setIsLoading(false);
     }
   };

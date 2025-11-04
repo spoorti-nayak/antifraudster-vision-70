@@ -75,27 +75,30 @@ export const useAuthProvider = () => {
   };
 
   useEffect(() => {
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    // Set up auth state listener - NEVER use async directly to avoid deadlocks
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user) {
-        const profile = await loadMerchantProfile(session.user.id);
-        
-        setUser({
-          id: session.user.id,
-          email: session.user.email!,
-          firstName: profile?.first_name || '',
-          lastName: profile?.last_name || '',
-          company: profile?.company_name || '',
-          merchantProfile: profile || undefined,
-        });
-        setIsLoading(false);
+        // Defer Supabase calls with setTimeout to avoid deadlock
+        setTimeout(() => {
+          loadMerchantProfile(session.user.id).then((profile) => {
+            setUser({
+              id: session.user.id,
+              email: session.user.email!,
+              firstName: profile?.first_name || '',
+              lastName: profile?.last_name || '',
+              company: profile?.company_name || '',
+              merchantProfile: profile || undefined,
+            });
+            setIsLoading(false);
+          });
+        }, 0);
       } else {
         setUser(null);
         setIsLoading(false);
       }
     });
 
-    // THEN check for existing session
+    // Check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         loadMerchantProfile(session.user.id).then((profile) => {
@@ -124,9 +127,6 @@ export const useAuthProvider = () => {
     });
 
     if (error) throw error;
-    
-    // Navigation will happen automatically via onAuthStateChange
-    setTimeout(() => navigate('/dashboard'), 100);
   };
 
   const register = async (userData: {
@@ -136,7 +136,6 @@ export const useAuthProvider = () => {
     company: string;
     password: string;
   }) => {
-    // Sign up the user with proper email redirect
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: userData.email,
       password: userData.password,
@@ -153,12 +152,11 @@ export const useAuthProvider = () => {
     if (authError) throw authError;
     if (!authData.user) throw new Error('User creation failed');
 
-    // Create merchant profile
     const { error: profileError } = await supabase
       .from('merchants')
       .insert({
         name: userData.company,
-        domain: '', // Will be set up later during vendor integration
+        domain: '',
         user_id: authData.user.id,
         first_name: userData.firstName,
         last_name: userData.lastName,
@@ -167,9 +165,6 @@ export const useAuthProvider = () => {
       });
 
     if (profileError) throw profileError;
-
-    // Navigation will happen automatically via onAuthStateChange
-    setTimeout(() => navigate('/dashboard'), 100);
   };
 
   const logout = async () => {

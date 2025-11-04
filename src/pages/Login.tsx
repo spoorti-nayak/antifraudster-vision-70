@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const { login } = useAuth();
+  const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,17 +23,16 @@ const Login = () => {
     
     try {
       await login(email, password);
-      toast({
-        title: "Login Successful",
-        description: "Welcome to Antifraudster Dashboard",
-      });
+      // Navigate after successful login
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 100);
     } catch (error: any) {
       toast({
         title: "Login Failed",
         description: error.message || "Invalid email or password",
         variant: "destructive"
       });
-    } finally {
       setIsLoading(false);
     }
   };
