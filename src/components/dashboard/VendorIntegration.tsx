@@ -24,14 +24,12 @@ const VendorIntegration = () => {
 
   useEffect(() => {
     if (user?.merchantProfile) {
-      // Only load website URL, not API key - user must generate it explicitly
       setWebsiteUrl(user.merchantProfile.domain || "");
-      // Only show connected if BOTH api_key AND domain exist
-      const hasApiKey = !!user.merchantProfile.api_key;
-      const hasDomain = !!user.merchantProfile.domain;
-      setIsConnected(hasApiKey && hasDomain);
+      // Only show connected if domain is set AND user has generated an API key (stored in state)
+      const hasDomain = !!user.merchantProfile.domain && user.merchantProfile.domain.trim() !== '';
+      setIsConnected(hasDomain && !!apiKey);
     }
-  }, [user]);
+  }, [user, apiKey]);
 
   const generateApiKey = async () => {
     if (!user?.id) {
@@ -53,6 +51,10 @@ const VendorIntegration = () => {
     }
 
     setApiKey(newKey);
+    // Update connection status if website is already configured
+    if (websiteUrl && websiteUrl.trim() !== '') {
+      setIsConnected(true);
+    }
     toast.success("API key generated successfully!");
   };
 
@@ -91,8 +93,13 @@ const VendorIntegration = () => {
 
       if (error) throw error;
 
-      setIsConnected(true);
-      toast.success("Website connected! Now add the integration code to your site.");
+      // Only set connected if API key is also generated
+      if (apiKey && apiKey.trim() !== '') {
+        setIsConnected(true);
+        toast.success("Website connected! Now add the integration code to your site.");
+      } else {
+        toast.success("Website URL saved! Generate an API key to complete the connection.");
+      }
     } catch (error) {
       console.error('Error connecting website:', error);
       toast.error("Failed to connect website");
