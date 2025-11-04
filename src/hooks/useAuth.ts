@@ -124,8 +124,6 @@ export const useAuthProvider = () => {
 
   const login = async (email: string, password: string) => {
     try {
-      setIsLoading(true);
-      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -144,14 +142,12 @@ export const useAuthProvider = () => {
           company: profile?.company_name || '',
           merchantProfile: profile || undefined,
         });
+        
+        navigate('/dashboard');
       }
-      
-      navigate('/dashboard');
     } catch (error: any) {
       console.error('Login error:', error);
       throw new Error(error.message || 'Login failed');
-    } finally {
-      setIsLoading(false);
     }
   };
 
