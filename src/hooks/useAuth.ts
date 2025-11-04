@@ -75,34 +75,8 @@ export const useAuthProvider = () => {
   };
 
   useEffect(() => {
-    // Check for existing auth session
-    const checkSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.user) {
-          const profile = await loadMerchantProfile(session.user.id);
-          
-          setUser({
-            id: session.user.id,
-            email: session.user.email!,
-            firstName: profile?.first_name || '',
-            lastName: profile?.last_name || '',
-            company: profile?.company_name || '',
-            merchantProfile: profile || undefined,
-          });
-        }
-      } catch (error) {
-        console.error('Error checking session:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    checkSession();
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    // Set up auth state listener FIRST
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
         const profile = await loadMerchantProfile(session.user.id);
         
@@ -114,8 +88,29 @@ export const useAuthProvider = () => {
           company: profile?.company_name || '',
           merchantProfile: profile || undefined,
         });
+        setIsLoading(false);
       } else {
         setUser(null);
+        setIsLoading(false);
+      }
+    });
+
+    // THEN check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadMerchantProfile(session.user.id).then((profile) => {
+          setUser({
+            id: session.user.id,
+            email: session.user.email!,
+            firstName: profile?.first_name || '',
+            lastName: profile?.last_name || '',
+            company: profile?.company_name || '',
+            merchantProfile: profile || undefined,
+          });
+          setIsLoading(false);
+        });
+      } else {
+        setIsLoading(false);
       }
     });
 
@@ -123,32 +118,15 @@ export const useAuthProvider = () => {
   }, []);
 
   const login = async (email: string, password: string) => {
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-      if (error) throw error;
-      
-      if (data.user) {
-        const profile = await loadMerchantProfile(data.user.id);
-        
-        setUser({
-          id: data.user.id,
-          email: data.user.email!,
-          firstName: profile?.first_name || '',
-          lastName: profile?.last_name || '',
-          company: profile?.company_name || '',
-          merchantProfile: profile || undefined,
-        });
-        
-        navigate('/dashboard');
-      }
-    } catch (error: any) {
-      console.error('Login error:', error);
-      throw new Error(error.message || 'Login failed');
-    }
+    if (error) throw error;
+    
+    // Navigation will happen automatically via onAuthStateChange
+    setTimeout(() => navigate('/dashboard'), 100);
   };
 
   const register = async (userData: {
@@ -158,59 +136,40 @@ export const useAuthProvider = () => {
     company: string;
     password: string;
   }) => {
-    try {
-      setIsLoading(true);
-      
-      // Sign up the user with proper email redirect
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: userData.email,
-        password: userData.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/dashboard`,
-          data: {
-            first_name: userData.firstName,
-            last_name: userData.lastName,
-            company_name: userData.company,
-          }
-        }
-      });
-
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('User creation failed');
-
-      // Create merchant profile
-      const { data: profileData, error: profileError } = await supabase
-        .from('merchants')
-        .insert({
-          name: userData.company,
-          domain: '', // Will be set up later during vendor integration
-          user_id: authData.user.id,
+    // Sign up the user with proper email redirect
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: userData.email,
+      password: userData.password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/dashboard`,
+        data: {
           first_name: userData.firstName,
           last_name: userData.lastName,
           company_name: userData.company,
-          email: userData.email,
-        })
-        .select()
-        .single();
+        }
+      }
+    });
 
-      if (profileError) throw profileError;
+    if (authError) throw authError;
+    if (!authData.user) throw new Error('User creation failed');
 
-      setUser({
-        id: authData.user.id,
-        email: authData.user.email!,
-        firstName: profileData.first_name,
-        lastName: profileData.last_name,
-        company: profileData.company_name,
-        merchantProfile: profileData,
+    // Create merchant profile
+    const { error: profileError } = await supabase
+      .from('merchants')
+      .insert({
+        name: userData.company,
+        domain: '', // Will be set up later during vendor integration
+        user_id: authData.user.id,
+        first_name: userData.firstName,
+        last_name: userData.lastName,
+        company_name: userData.company,
+        email: userData.email,
       });
-      
-      navigate('/dashboard');
-    } catch (error: any) {
-      console.error('Registration error:', error);
-      throw new Error(error.message || 'Registration failed');
-    } finally {
-      setIsLoading(false);
-    }
+
+    if (profileError) throw profileError;
+
+    // Navigation will happen automatically via onAuthStateChange
+    setTimeout(() => navigate('/dashboard'), 100);
   };
 
   const logout = async () => {
