@@ -17,7 +17,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 const VendorIntegration = () => {
-  const { user } = useAuth();
+  const { user, refreshAuth } = useAuth();
   const [apiKey, setApiKey] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [isConnected, setIsConnected] = useState(false);
@@ -92,6 +92,9 @@ const VendorIntegration = () => {
         .eq('user_id', user.id);
 
       if (error) throw error;
+
+      // Refresh auth context to update the parent page
+      await refreshAuth();
 
       // Only set connected if API key is also generated
       if (apiKey && apiKey.trim() !== '') {
