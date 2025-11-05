@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import FraudCharts from "@/components/dashboard/FraudCharts";
 import AnalyticsCharts from "@/components/dashboard/AnalyticsCharts";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useVendor } from "@/contexts/VendorContext";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Link } from "react-router-dom";
@@ -13,8 +14,8 @@ import { Link } from "react-router-dom";
 const Analytics = () => {
   const [dateRange, setDateRange] = useState<'24h' | '7d' | '30d'>('7d');
   const { user } = useAuth();
+  const { isConnected } = useVendor();
   const [stats, setStats] = useState({ total: 0, fraudDetected: 0, avgScore: 0 });
-  const isConnected = !!user?.merchantProfile?.api_key;
 
   useEffect(() => {
     if (!user?.merchantProfile?.id) return;
@@ -37,25 +38,27 @@ const Analytics = () => {
     fetchStats();
   }, [user?.merchantProfile?.id]);
 
+  const hasData = stats.total > 0;
+
   const analyticsCards = [
     {
       title: "Detection Rate",
-      value: isConnected && stats.total > 0 ? `${((stats.fraudDetected / stats.total) * 100).toFixed(1)}%` : "0%",
-      change: isConnected ? "+2.1%" : "No data",
+      value: hasData ? `${((stats.fraudDetected / stats.total) * 100).toFixed(1)}%` : "0%",
+      change: hasData ? `${stats.fraudDetected} detected` : "No data",
       trend: "up",
       icon: TrendingUp,
     },
     {
       title: "Total Transactions",
-      value: isConnected ? stats.total.toString() : "0",
-      change: isConnected ? `${stats.fraudDetected} flagged` : "No data",
+      value: hasData ? stats.total.toString() : "0",
+      change: hasData ? `${stats.fraudDetected} flagged` : "No data",
       trend: "down",
       icon: BarChart3,
     },
     {
       title: "Avg Fraud Score",
-      value: isConnected ? `${stats.avgScore.toFixed(1)}%` : "0%",
-      change: isConnected ? "-15ms" : "No data",
+      value: hasData ? `${stats.avgScore.toFixed(1)}%` : "0%",
+      change: hasData ? "Real-time data" : "No data",
       trend: "down", 
       icon: Calendar,
     },
@@ -127,7 +130,7 @@ const Analytics = () => {
       </div>
 
       {/* Charts */}
-      {isConnected ? (
+      {isConnected && hasData ? (
         <Tabs defaultValue="overview" className="space-y-6">
           <TabsList className="grid w-full grid-cols-4 glass-effect">
             <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -226,7 +229,7 @@ const Analytics = () => {
             </div>
           </TabsContent>
         </Tabs>
-      ) : (
+      ) : !isConnected ? (
         <Card className="card-3d">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             <Settings className="h-16 w-16 text-muted-foreground mb-4" />
@@ -241,6 +244,18 @@ const Analytics = () => {
                 Set Up Integration
               </Link>
             </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="card-3d">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <BarChart3 className="h-16 w-16 text-muted-foreground mb-4" />
+            <h3 className="text-xl font-semibold text-foreground mb-2">
+              Waiting for Transaction Data
+            </h3>
+            <p className="text-muted-foreground mb-6 max-w-md">
+              Your website is connected. Analytics will appear once your e-commerce site sends transaction data.
+            </p>
           </CardContent>
         </Card>
       )}

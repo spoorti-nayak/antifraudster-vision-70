@@ -1,12 +1,10 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, ReactNode } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 
 interface VendorContextType {
   isConnected: boolean;
-  setIsConnected: (connected: boolean) => void;
   websiteUrl: string;
-  setWebsiteUrl: (url: string) => void;
   apiKey: string;
-  setApiKey: (key: string) => void;
 }
 
 const VendorContext = createContext<VendorContextType | undefined>(undefined);
@@ -24,18 +22,23 @@ interface VendorProviderProps {
 }
 
 export const VendorProvider = ({ children }: VendorProviderProps) => {
-  const [isConnected, setIsConnected] = useState(false);
-  const [websiteUrl, setWebsiteUrl] = useState("");
-  const [apiKey, setApiKey] = useState("");
+  const { user } = useAuth();
+  
+  // Check if both API key AND domain are set
+  const isConnected = !!(
+    user?.merchantProfile?.api_key && 
+    user?.merchantProfile?.domain && 
+    user?.merchantProfile?.domain.trim() !== ''
+  );
+  
+  const websiteUrl = user?.merchantProfile?.domain || "";
+  const apiKey = user?.merchantProfile?.api_key || "";
 
   return (
     <VendorContext.Provider value={{
       isConnected,
-      setIsConnected,
       websiteUrl,
-      setWebsiteUrl,
-      apiKey,
-      setApiKey
+      apiKey
     }}>
       {children}
     </VendorContext.Provider>

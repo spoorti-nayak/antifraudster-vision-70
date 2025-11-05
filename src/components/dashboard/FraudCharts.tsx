@@ -18,62 +18,89 @@ import {
   ResponsiveContainer 
 } from "recharts";
 import { TrendingUp, PieChart as PieChartIcon, BarChart3 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
-// Generate mock data based on selected date range
-const generateSeriesData = (range: '24h' | '7d' | '30d') => {
-  const data: any[] = [];
+// Fetch real transaction data from database
+const fetchRealSeriesData = async (merchantId: string, range: '24h' | '7d' | '30d') => {
   const now = new Date();
+  const startTime = new Date(
+    range === '24h' ? now.getTime() - 24 * 60 * 60 * 1000 :
+    range === '7d' ? now.getTime() - 7 * 24 * 60 * 60 * 1000 :
+    now.getTime() - 30 * 24 * 60 * 60 * 1000
+  );
 
-  const pushPoint = (timeLabel: string, hour: number) => {
-    const baseFraudRate = hour >= 22 || hour <= 6 ? 8 : hour >= 9 && hour <= 17 ? 3 : 5;
-    const fraudDetected = Math.floor(Math.random() * 10 + baseFraudRate);
-    const safeTransactions = Math.floor(Math.random() * 200 + 100);
-    const totalTransactions = fraudDetected + safeTransactions;
-    data.push({
-      time: timeLabel,
-      hour,
-      fraudDetected,
-      safeTransactions,
-      totalTransactions,
-      fraudRate: ((fraudDetected / totalTransactions) * 100).toFixed(1),
-    });
-  };
+  const { data } = await supabase
+    .from('transactions')
+    .select('created_at, status, fraud_score')
+    .eq('merchant_id', merchantId)
+    .gte('created_at', startTime.toISOString());
 
-  if (range === '24h') {
-    for (let i = 23; i >= 0; i--) {
-      const time = new Date(now.getTime() - i * 60 * 60 * 1000);
-      const hour = time.getHours();
-      pushPoint(time.toLocaleTimeString([], { hour: '2-digit' }), hour);
+  if (!data || data.length === 0) return [];
+
+  // Group transactions by time buckets
+  const buckets = new Map();
+  data.forEach(tx => {
+    const date = new Date(tx.created_at);
+    const key = range === '24h' 
+      ? date.toLocaleTimeString([], { hour: '2-digit' })
+      : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    
+    if (!buckets.has(key)) {
+      buckets.set(key, { fraudDetected: 0, safeTransactions: 0 });
     }
-  } else {
-    const days = range === '7d' ? 7 : 30;
-    for (let i = days - 1; i >= 0; i--) {
-      const time = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-      // Use midday as representative hour
-      pushPoint(time.toLocaleDateString([], { month: 'short', day: 'numeric' }), 12);
+    
+    const bucket = buckets.get(key);
+    if (tx.status === 'blocked' || tx.status === 'flagged') {
+      bucket.fraudDetected++;
+    } else {
+      bucket.safeTransactions++;
     }
-  }
+  });
 
-  return data;
+  return Array.from(buckets.entries()).map(([time, counts]) => ({
+    time,
+    fraudDetected: counts.fraudDetected,
+    safeTransactions: counts.safeTransactions,
+    totalTransactions: counts.fraudDetected + counts.safeTransactions,
+  }));
 };
 
-// Generate threshold data
-const generateThresholdData = (range: '24h' | '7d' | '30d') => {
-  const data: any[] = [];
+const fetchRealThresholdData = async (merchantId: string, range: '24h' | '7d' | '30d') => {
   const now = new Date();
-  const points = range === '24h' ? 24 : range === '7d' ? 7 : 30;
+  const startTime = new Date(
+    range === '24h' ? now.getTime() - 24 * 60 * 60 * 1000 :
+    range === '7d' ? now.getTime() - 7 * 24 * 60 * 60 * 1000 :
+    now.getTime() - 30 * 24 * 60 * 60 * 1000
+  );
 
-  for (let i = points - 1; i >= 0; i--) {
-    const time = new Date(now.getTime() - i * (range === '24h' ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000));
-    data.push({
-      time: range === '24h' ? time.toLocaleTimeString([], { hour: '2-digit' }) : time.toLocaleDateString([], { month: 'short', day: 'numeric' }),
-      adaptiveThreshold: Math.random() * 20 + 60,
-      staticThreshold: 75,
-      avgRiskScore: Math.random() * 15 + 25,
-    });
-  }
+  const { data } = await supabase
+    .from('transactions')
+    .select('created_at, fraud_score')
+    .eq('merchant_id', merchantId)
+    .gte('created_at', startTime.toISOString());
 
-  return data;
+  if (!data || data.length === 0) return [];
+
+  const buckets = new Map();
+  data.forEach(tx => {
+    const date = new Date(tx.created_at);
+    const key = range === '24h' 
+      ? date.toLocaleTimeString([], { hour: '2-digit' })
+      : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    
+    if (!buckets.has(key)) {
+      buckets.set(key, { scores: [] });
+    }
+    buckets.get(key).scores.push(tx.fraud_score || 0);
+  });
+
+  return Array.from(buckets.entries()).map(([time, data]) => ({
+    time,
+    avgRiskScore: data.scores.reduce((a: number, b: number) => a + b, 0) / data.scores.length,
+    adaptiveThreshold: 70,
+    staticThreshold: 75,
+  }));
 };
 
 const COLORS = {
@@ -90,24 +117,28 @@ const FraudCharts = ({
   dateRange?: '24h' | '7d' | '30d';
   defaultChart?: 'trends' | 'ratio' | 'threshold';
 }) => {
-  const [seriesData, setSeriesData] = useState(generateSeriesData(dateRange));
-  const [thresholdData, setThresholdData] = useState(generateThresholdData(dateRange));
+  const { user } = useAuth();
+  const [seriesData, setSeriesData] = useState<any[]>([]);
+  const [thresholdData, setThresholdData] = useState<any[]>([]);
   const [selectedChart, setSelectedChart] = useState<'trends' | 'ratio' | 'threshold'>(defaultChart);
 
-  // Update data periodically
+  // Fetch real data
   useEffect(() => {
-    const interval = setInterval(() => {
-      setSeriesData(generateSeriesData(dateRange));
-      setThresholdData(generateThresholdData(dateRange));
-    }, 60000);
-    return () => clearInterval(interval);
-  }, [dateRange]);
+    if (!user?.merchantProfile?.id) return;
 
-  // Also update on dateRange change immediately
-  useEffect(() => {
-    setSeriesData(generateSeriesData(dateRange));
-    setThresholdData(generateThresholdData(dateRange));
-  }, [dateRange]);
+    const loadData = async () => {
+      const series = await fetchRealSeriesData(user.merchantProfile.id, dateRange);
+      const threshold = await fetchRealThresholdData(user.merchantProfile.id, dateRange);
+      setSeriesData(series);
+      setThresholdData(threshold);
+    };
+
+    loadData();
+    
+    // Refresh every minute
+    const interval = setInterval(loadData, 60000);
+    return () => clearInterval(interval);
+  }, [dateRange, user?.merchantProfile?.id]);
 
   const totalSafe = seriesData.reduce((sum, item) => sum + item.safeTransactions, 0);
   const totalFraud = seriesData.reduce((sum, item) => sum + item.fraudDetected, 0);
