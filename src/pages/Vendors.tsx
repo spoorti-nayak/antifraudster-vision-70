@@ -13,7 +13,7 @@ const Vendors = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const { user } = useAuth();
   const [requestCount, setRequestCount] = useState(0);
-  const isConnected = !!user?.merchantProfile?.api_key;
+  const isConnected = !!(user?.merchantProfile?.api_key && user?.merchantProfile?.domain);
 
   useEffect(() => {
     if (!user?.merchantProfile?.id) return;
