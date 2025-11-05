@@ -22,14 +22,25 @@ const VendorIntegration = () => {
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [isConnected, setIsConnected] = useState(false);
 
+  // Load existing API key and domain from user profile
   useEffect(() => {
     if (user?.merchantProfile) {
-      setWebsiteUrl(user.merchantProfile.domain || "");
-      // Only show connected if domain is set AND user has generated an API key (stored in state)
-      const hasDomain = !!user.merchantProfile.domain && user.merchantProfile.domain.trim() !== '';
-      setIsConnected(hasDomain && !!apiKey);
+      const existingKey = user.merchantProfile.api_key;
+      const existingDomain = user.merchantProfile.domain || "";
+      
+      // Load API key from database if it exists
+      if (existingKey) {
+        setApiKey(existingKey);
+      }
+      
+      setWebsiteUrl(existingDomain);
+      
+      // Connected only if BOTH API key and domain exist
+      const hasDomain = !!existingDomain && existingDomain.trim() !== '';
+      const hasApiKey = !!existingKey && existingKey.trim() !== '';
+      setIsConnected(hasDomain && hasApiKey);
     }
-  }, [user, apiKey]);
+  }, [user?.merchantProfile]);
 
   const generateApiKey = async () => {
     if (!user?.id) {
@@ -37,7 +48,10 @@ const VendorIntegration = () => {
       return;
     }
 
-    const newKey = `af_${Math.random().toString(36).substr(2, 32)}`;
+    // Generate 64-character secure API key
+    const randomBytes = new Uint8Array(32);
+    crypto.getRandomValues(randomBytes);
+    const newKey = `af_live_${Array.from(randomBytes, byte => byte.toString(16).padStart(2, '0')).join('')}`;
     
     const { error } = await supabase
       .from('merchants')
@@ -51,11 +65,13 @@ const VendorIntegration = () => {
     }
 
     setApiKey(newKey);
+    await refreshAuth();
+    
     // Update connection status if website is already configured
     if (websiteUrl && websiteUrl.trim() !== '') {
       setIsConnected(true);
     }
-    toast.success("API key generated successfully!");
+    toast.success("API key generated successfully! Keep it secure.");
   };
 
   const copyToClipboard = (text: string) => {
@@ -106,6 +122,34 @@ const VendorIntegration = () => {
     } catch (error) {
       console.error('Error connecting website:', error);
       toast.error("Failed to connect website");
+    }
+  };
+
+  const disconnectWebsite = async () => {
+    if (!user?.id) {
+      toast.error("Please log in first");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('merchants')
+        .update({ 
+          domain: '',
+          is_active: false 
+        })
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      setWebsiteUrl('');
+      setIsConnected(false);
+      await refreshAuth();
+      
+      toast.success("Website disconnected successfully");
+    } catch (error) {
+      console.error('Error disconnecting website:', error);
+      toast.error("Failed to disconnect website");
     }
   };
 
@@ -348,7 +392,18 @@ if (signature === expected) {
 
           {/* Step 2: Website URL */}
           <div className="space-y-2">
-            <Label className="text-base font-medium">Step 2: Add Your Website URL</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-base font-medium">Step 2: Add Your Website URL</Label>
+              {isConnected && (
+                <Button 
+                  variant="destructive" 
+                  size="sm" 
+                  onClick={disconnectWebsite}
+                >
+                  Disconnect
+                </Button>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground mb-2">
               Your website domain is used for CORS validation and to link transactions to your account. This ensures only authorized requests from your domain are processed.
             </p>
@@ -357,6 +412,7 @@ if (signature === expected) {
                 value={websiteUrl}
                 onChange={(e) => setWebsiteUrl(e.target.value)}
                 placeholder="https://your-ecommerce-site.com"
+                disabled={isConnected}
               />
               <Button 
                 onClick={connectWebsite}
