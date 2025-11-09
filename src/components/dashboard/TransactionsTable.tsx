@@ -20,110 +20,56 @@ import {
   CheckCircle,
   Clock
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Transaction {
   id: string;
-  buyer: string;
-  seller: string;
+  customer_email: string;
   amount: number;
-  status: 'safe' | 'fraud' | 'processing';
-  riskScore: number;
-  explanation: string;
-  timestamp: Date;
+  currency: string;
+  status: string;
+  risk_level: string;
+  fraud_score: number;
+  created_at: string;
+  fraud_reasons: any;
 }
 
-const generateMockTransactions = (count: number): Transaction[] => {
-  const buyers = [
-    "john.doe@email.com", "sarah.smith@company.com", "mike.wilson@store.com",
-    "anna.garcia@shop.org", "david.brown@market.net", "lisa.jones@buy.com",
-    "robert.davis@purchase.io", "emily.clark@order.co", "james.white@cart.biz",
-    "suspicious.user@temp.mail", "fraud.attempt@fake.org", "test.card@invalid.com"
-  ];
+const StatusBadge = ({ status, riskLevel }: { status: string; riskLevel: string }) => {
+  if (status === 'blocked') {
+    return (
+      <div className="flex items-center space-x-1">
+        <AlertTriangle className="h-3 w-3 text-fraud" />
+        <Badge className="status-fraud text-xs">Blocked</Badge>
+      </div>
+    );
+  }
   
-  const sellers = [
-    "TechStore Pro", "Fashion Hub", "Electronics World", "Book Paradise", 
-    "Home Essentials", "Sports Gear", "Beauty Corner", "Auto Parts Plus",
-    "Kitchen Magic", "Garden Center"
-  ];
-
-  const explanations = {
-    safe: [
-      "Normal purchase pattern detected",
-      "Verified customer with good history",
-      "Trusted device and location",
-      "Regular transaction amount",
-      "Account in good standing"
-    ],
-    fraud: [
-      "Multiple payment failures detected",
-      "Suspicious IP address flagged",
-      "Device fingerprint mismatch",
-      "Velocity check failed",
-      "Geolocation inconsistency"
-    ],
-    processing: [
-      "Additional verification required",
-      "Manual review in progress",
-      "Awaiting payment confirmation"
-    ]
-  };
-
-  return Array.from({ length: count }, (_, index) => {
-    const isFraud = Math.random() < 0.15;
-    const isProcessing = !isFraud && Math.random() < 0.1;
-    
-    let status: 'safe' | 'fraud' | 'processing';
-    let riskScore: number;
-    
-    if (isFraud) {
-      status = 'fraud';
-      riskScore = Math.random() * 30 + 70; // 70-100%
-    } else if (isProcessing) {
-      status = 'processing';
-      riskScore = Math.random() * 20 + 40; // 40-60%
-    } else {
-      status = 'safe';
-      riskScore = Math.random() * 30 + 5; // 5-35%
-    }
-
-    return {
-      id: `TXN-${(1000000 + index).toString()}`,
-      buyer: buyers[Math.floor(Math.random() * buyers.length)],
-      seller: sellers[Math.floor(Math.random() * sellers.length)],
-      amount: Math.floor(Math.random() * 90000 + 10000), // ₹10,000 to ₹1,00,000
-      status,
-      riskScore,
-      explanation: explanations[status][Math.floor(Math.random() * explanations[status].length)],
-      timestamp: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000) // Last 7 days
-    };
-  });
-};
-
-const StatusBadge = ({ status, riskScore }: { status: string; riskScore: number }) => {
-  switch (status) {
-    case 'safe':
+  switch (riskLevel) {
+    case 'low':
       return (
         <div className="flex items-center space-x-1">
           <CheckCircle className="h-3 w-3 text-safe" />
           <Badge className="status-safe text-xs">Safe</Badge>
         </div>
       );
-    case 'fraud':
+    case 'high':
+    case 'critical':
       return (
         <div className="flex items-center space-x-1">
           <AlertTriangle className="h-3 w-3 text-fraud" />
-          <Badge className="status-fraud text-xs">Fraud</Badge>
+          <Badge className="status-fraud text-xs">High Risk</Badge>
         </div>
       );
-    case 'processing':
+    case 'medium':
       return (
         <div className="flex items-center space-x-1">
           <Clock className="h-3 w-3 text-suspicious" />
-          <Badge className="status-suspicious text-xs">Processing</Badge>
+          <Badge className="status-suspicious text-xs">Medium Risk</Badge>
         </div>
       );
     default:
-      return <Badge variant="outline" className="text-xs">{status}</Badge>;
+      return <Badge variant="outline" className="text-xs">{riskLevel}</Badge>;
   }
 };
 
@@ -137,18 +83,68 @@ export interface TransactionsTableRef {
 }
 
 const TransactionsTable = forwardRef<TransactionsTableRef, TransactionsTableProps>(({ searchQuery, hideToolbar }, ref) => {
+  const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<'timestamp' | 'amount' | 'riskScore'>(
-    'timestamp'
+  const [sortBy, setSortBy] = useState<'created_at' | 'amount' | 'fraud_score'>(
+    'created_at'
   );
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const mockTransactions = generateMockTransactions(50);
-    setTransactions(mockTransactions);
-  }, []);
+    if (!user?.merchantProfile?.id) {
+      setIsLoading(false);
+      return;
+    }
+
+    const loadTransactions = async () => {
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('merchant_id', user.merchantProfile.id)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (error) {
+        console.error('Error loading transactions:', error);
+      } else {
+        setTransactions(data || []);
+      }
+      setIsLoading(false);
+    };
+
+    loadTransactions();
+
+    // Subscribe to real-time updates
+    const channel = supabase
+      .channel('transactions')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'transactions',
+          filter: `merchant_id=eq.${user.merchantProfile.id}`
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setTransactions(prev => [payload.new as Transaction, ...prev]);
+          } else if (payload.eventType === 'UPDATE') {
+            setTransactions(prev => prev.map(t => 
+              t.id === payload.new.id ? payload.new as Transaction : t
+            ));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.merchantProfile?.id]);
 
   useImperativeHandle(ref, () => ({
     export: exportTransactions,
@@ -159,11 +155,14 @@ const TransactionsTable = forwardRef<TransactionsTableRef, TransactionsTableProp
   const filteredTransactions = transactions
     .filter((transaction) => {
       const matchesSearch =
-        transaction.buyer.toLowerCase().includes(effectiveSearch) ||
-        transaction.seller.toLowerCase().includes(effectiveSearch) ||
+        transaction.customer_email.toLowerCase().includes(effectiveSearch) ||
         transaction.id.toLowerCase().includes(effectiveSearch);
 
-      const matchesStatus = statusFilter === "all" || transaction.status === statusFilter;
+      const matchesStatus = statusFilter === "all" || 
+        (statusFilter === "blocked" && transaction.status === "blocked") ||
+        (statusFilter === "low" && transaction.risk_level === "low") ||
+        (statusFilter === "medium" && transaction.risk_level === "medium") ||
+        (statusFilter === "high" && (transaction.risk_level === "high" || transaction.risk_level === "critical"));
 
       return matchesSearch && matchesStatus;
     })
@@ -172,24 +171,24 @@ const TransactionsTable = forwardRef<TransactionsTableRef, TransactionsTableProp
 
       switch (sortBy) {
         case 'amount':
-          aVal = a.amount;
-          bVal = b.amount;
+          aVal = parseFloat(a.amount as any);
+          bVal = parseFloat(b.amount as any);
           break;
-        case 'riskScore':
-          aVal = a.riskScore;
-          bVal = b.riskScore;
+        case 'fraud_score':
+          aVal = parseFloat(a.fraud_score as any);
+          bVal = parseFloat(b.fraud_score as any);
           break;
-        case 'timestamp':
+        case 'created_at':
         default:
-          aVal = a.timestamp.getTime();
-          bVal = b.timestamp.getTime();
+          aVal = new Date(a.created_at).getTime();
+          bVal = new Date(b.created_at).getTime();
           break;
       }
 
       return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
     });
 
-  const handleSort = (column: 'timestamp' | 'amount' | 'riskScore') => {
+  const handleSort = (column: 'created_at' | 'amount' | 'fraud_score') => {
     if (sortBy === column) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
@@ -245,9 +244,10 @@ const TransactionsTable = forwardRef<TransactionsTableRef, TransactionsTableProp
                 className="px-3 py-2 border border-border rounded-md text-sm bg-background"
               >
                 <option value="all">All Status</option>
-                <option value="safe">Safe</option>
-                <option value="fraud">Fraud</option>
-                <option value="processing">Processing</option>
+                <option value="low">Safe (Low Risk)</option>
+                <option value="medium">Medium Risk</option>
+                <option value="high">High Risk</option>
+                <option value="blocked">Blocked</option>
               </select>
             </div>
           </div>
@@ -255,91 +255,115 @@ const TransactionsTable = forwardRef<TransactionsTableRef, TransactionsTableProp
       </CardHeader>
 
       <CardContent>
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Transaction ID</TableHead>
-                <TableHead>Buyer</TableHead>
-                <TableHead>Seller</TableHead>
-                <TableHead
-                  className="cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => handleSort('amount')}
-                >
-                  Amount {sortBy === 'amount' && (sortOrder === 'asc' ? '↑' : '↓')}
-                </TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead
-                  className="cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => handleSort('riskScore')}
-                >
-                  Risk Score {sortBy === 'riskScore' && (sortOrder === 'asc' ? '↑' : '↓')}
-                </TableHead>
-                <TableHead>Explanation</TableHead>
-                <TableHead
-                  className="cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => handleSort('timestamp')}
-                >
-                  Timestamp {sortBy === 'timestamp' && (sortOrder === 'asc' ? '↑' : '↓')}
-                </TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredTransactions.slice(0, 20).map((transaction) => (
-                <TableRow key={transaction.id} className="hover:bg-muted/50">
-                  <TableCell className="font-mono text-sm">{transaction.id}</TableCell>
-                  <TableCell className="max-w-[200px] truncate">{transaction.buyer}</TableCell>
-                  <TableCell>{transaction.seller}</TableCell>
-                  <TableCell className="font-medium">₹{transaction.amount.toLocaleString('en-IN')}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={transaction.status} riskScore={transaction.riskScore} />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center space-x-2">
-                      <span className="font-mono text-sm">{transaction.riskScore.toFixed(1)}%</span>
-                      <div className="w-12 h-2 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className={`h-full transition-all duration-300 ${
-                            transaction.riskScore > 70
-                              ? 'bg-fraud'
-                              : transaction.riskScore > 40
-                              ? 'bg-suspicious'
-                              : 'bg-safe'
-                          }`}
-                          style={{ width: `${Math.min(transaction.riskScore, 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="max-w-[250px] truncate text-sm text-muted-foreground">
-                    {transaction.explanation}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {transaction.timestamp.toLocaleDateString()} {" "}
-                    {transaction.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </TableCell>
-                  <TableCell>
-                    <Button variant="ghost" size="sm">
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
-          <span>
-            Showing {Math.min(filteredTransactions.length, 20)} of {filteredTransactions.length} transactions
-          </span>
-          <div className="flex items-center space-x-4">
-            <span>Safe: {filteredTransactions.filter((t) => t.status === 'safe').length}</span>
-            <span className="text-fraud">Fraud: {filteredTransactions.filter((t) => t.status === 'fraud').length}</span>
-            <span className="text-suspicious">Processing: {filteredTransactions.filter((t) => t.status === 'processing').length}</span>
+        {isLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center text-muted-foreground">
+              <Clock className="h-8 w-8 mx-auto mb-2 animate-spin" />
+              <p>Loading transactions...</p>
+            </div>
           </div>
-        </div>
+        ) : transactions.length === 0 ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center text-muted-foreground">
+              <AlertTriangle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>No transactions yet</p>
+              <p className="text-xs mt-1">Waiting for data from your e-commerce site</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Transaction ID</TableHead>
+                    <TableHead>Customer Email</TableHead>
+                    <TableHead
+                      className="cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => handleSort('amount')}
+                    >
+                      Amount {sortBy === 'amount' && (sortOrder === 'asc' ? '↑' : '↓')}
+                    </TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead
+                      className="cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => handleSort('fraud_score')}
+                    >
+                      Risk Score {sortBy === 'fraud_score' && (sortOrder === 'asc' ? '↑' : '↓')}
+                    </TableHead>
+                    <TableHead>Risk Reasons</TableHead>
+                    <TableHead
+                      className="cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => handleSort('created_at')}
+                    >
+                      Timestamp {sortBy === 'created_at' && (sortOrder === 'asc' ? '↑' : '↓')}
+                    </TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTransactions.slice(0, 20).map((transaction) => (
+                    <TableRow key={transaction.id} className="hover:bg-muted/50">
+                      <TableCell className="font-mono text-sm">{transaction.id.slice(0, 8)}...</TableCell>
+                      <TableCell className="max-w-[200px] truncate">{transaction.customer_email}</TableCell>
+                      <TableCell className="font-medium">
+                        {transaction.currency} {parseFloat(transaction.amount as any).toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={transaction.status} riskLevel={transaction.risk_level} />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono text-sm">{parseFloat(transaction.fraud_score as any).toFixed(1)}%</span>
+                          <div className="w-12 h-2 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={`h-full transition-all duration-300 ${
+                                transaction.fraud_score > 70
+                                  ? 'bg-fraud'
+                                  : transaction.fraud_score > 40
+                                  ? 'bg-suspicious'
+                                  : 'bg-safe'
+                              }`}
+                              style={{ width: `${Math.min(parseFloat(transaction.fraud_score as any), 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-[250px] truncate text-sm text-muted-foreground">
+                        {transaction.fraud_reasons ? 
+                          Array.isArray(transaction.fraud_reasons) ? 
+                            transaction.fraud_reasons.join(', ') : 
+                            JSON.stringify(transaction.fraud_reasons)
+                          : 'No issues detected'}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {new Date(transaction.created_at).toLocaleDateString()} {" "}
+                        {new Date(transaction.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm">
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+              <span>
+                Showing {Math.min(filteredTransactions.length, 20)} of {filteredTransactions.length} transactions
+              </span>
+              <div className="flex items-center space-x-4">
+                <span>Low Risk: {filteredTransactions.filter((t) => t.risk_level === 'low').length}</span>
+                <span className="text-suspicious">Medium: {filteredTransactions.filter((t) => t.risk_level === 'medium').length}</span>
+                <span className="text-fraud">High: {filteredTransactions.filter((t) => t.risk_level === 'high' || t.risk_level === 'critical').length}</span>
+                <span className="text-fraud">Blocked: {filteredTransactions.filter((t) => t.status === 'blocked').length}</span>
+              </div>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );
