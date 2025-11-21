@@ -4,32 +4,26 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-
-interface Product {
-  id: string;
-  name: string;
-  price: number;
-}
+import { demoProducts, Product } from "@/data/products";
 
 const ShopCheckout = () => {
-  const [cartItems, setCartItems] = useState<{product: Product, quantity: number}[]>([]);
+  const [cartItems, setCartItems] = useState<{ product: Product; quantity: number }[]>([]);
   const [loading, setLoading] = useState(false);
   const [fraudCheckResult, setFraudCheckResult] = useState<any>(null);
   const [formData, setFormData] = useState({
-    email: '',
-    name: '',
-    phone: '',
-    address: '',
-    city: '',
-    state: '',
-    zip: '',
-    cardNumber: '',
-    cardExpiry: '',
-    cardCvv: ''
+    email: "",
+    name: "",
+    phone: "",
+    address: "",
+    city: "",
+    state: "",
+    zip: "",
+    cardNumber: "",
+    cardExpiry: "",
+    cardCvv: "",
   });
   const navigate = useNavigate();
 
@@ -37,144 +31,54 @@ const ShopCheckout = () => {
     loadCart();
   }, []);
 
-  const loadCart = async () => {
-    const savedCart = JSON.parse(localStorage.getItem('shop_cart') || '{}');
+  const loadCart = () => {
+    const savedCart = JSON.parse(localStorage.getItem("shop_cart") || "{}");
     const productIds = Object.keys(savedCart);
 
     if (productIds.length === 0) {
-      navigate('/shop/cart');
+      navigate("/shop/cart");
       return;
     }
 
-    const { data } = await supabase
-      .from('products')
-      .select('id, name, price')
-      .in('id', productIds);
-
-    const items = (data || []).map(product => ({
-      product,
-      quantity: savedCart[product.id]
-    }));
+    const items = productIds
+      .map((id) => {
+        const product = demoProducts.find((p) => p.id === id);
+        if (!product) return null;
+        return { product, quantity: savedCart[id] };
+      })
+      .filter(Boolean) as { product: Product; quantity: number }[];
 
     setCartItems(items);
   };
-
-  const total = cartItems.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+  const total = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setFraudCheckResult(null);
 
-    try {
-      // Get e-commerce settings to check if AntiFraudster is enabled
-      const { data: settings } = await supabase
-        .from('ecommerce_settings')
-        .select('*')
-        .single();
+    // Demo-only: simulate a simple client-side "fraud check" without any backend calls
+    const fraudResult = {
+      status: "approved",
+      riskLevel: "low",
+      fraudScore: 10,
+      message: "Demo fraud check passed successfully.",
+      aiExplanation: "Based on demo rules, this transaction appears legitimate.",
+    };
 
-      let fraudResult = null;
+    setFraudCheckResult(fraudResult);
 
-      // If AntiFraudster is enabled and API key is set, check for fraud
-      if (settings?.antifraudster_enabled && settings?.antifraudster_api_key) {
-        // Call the process-order edge function which will handle fraud detection
-        const { data: orderResult, error: orderError } = await supabase.functions.invoke('process-order', {
-          body: {
-            customerEmail: formData.email,
-            customerName: formData.name,
-            customerPhone: formData.phone,
-            amount: total,
-            currency: 'USD',
-            paymentMethod: 'card',
-            cardLast4: formData.cardNumber.slice(-4),
-            cardBin: formData.cardNumber.slice(0, 6),
-            shippingAddress: {
-              address: formData.address,
-              city: formData.city,
-              state: formData.state,
-              zip: formData.zip
-            },
-            items: cartItems.map(item => ({
-              productId: item.product.id,
-              productName: item.product.name,
-              price: item.product.price,
-              quantity: item.quantity
-            })),
-            apiKey: settings.antifraudster_api_key
-          }
-        });
-
-        if (orderError) throw orderError;
-
-        fraudResult = orderResult;
-        setFraudCheckResult(fraudResult);
-
-        // If transaction is blocked, show error
-        if (fraudResult?.status === 'blocked' || fraudResult?.isBlocked) {
-          toast.error('Transaction blocked due to fraud detection');
-          return;
-        }
-
-        // If flagged, show warning but allow to proceed
-        if (fraudResult?.status === 'flagged' || fraudResult?.riskLevel === 'high') {
-          toast.warning('This transaction has been flagged for review');
-        }
-      } else {
-        // No fraud detection - process order directly
-        const { data: order, error: orderError } = await supabase
-          .from('orders')
-          .insert({
-            customer_email: formData.email,
-            customer_name: formData.name,
-            customer_phone: formData.phone,
-            total_amount: total,
-            currency: 'USD',
-            status: 'completed',
-            payment_method: 'card',
-            shipping_address: {
-              address: formData.address,
-              city: formData.city,
-              state: formData.state,
-              zip: formData.zip
-            }
-          })
-          .select()
-          .single();
-
-        if (orderError) throw orderError;
-
-        // Insert order items
-        await supabase
-          .from('order_items')
-          .insert(
-            cartItems.map(item => ({
-              order_id: order.id,
-              product_id: item.product.id,
-              product_name: item.product.name,
-              product_price: item.product.price,
-              quantity: item.quantity,
-              subtotal: item.product.price * item.quantity
-            }))
-          );
-      }
-
-      // Clear cart
-      localStorage.removeItem('shop_cart');
-      toast.success('Order placed successfully!');
-      navigate('/shop/success');
-
-    } catch (error: any) {
-      console.error('Checkout error:', error);
-      toast.error(error.message || 'Failed to process order');
-    } finally {
+    setTimeout(() => {
+      localStorage.removeItem("shop_cart");
+      toast.success("Order placed successfully!");
       setLoading(false);
-    }
+      navigate("/shop/success");
+    }, 800);
   };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       <div className="container mx-auto px-4 py-8 max-w-5xl">
