@@ -37,11 +37,12 @@ export default function TransactionSimulator() {
   }, [user, navigate]);
 
   const scenarios = [
+    // === LEGITIMATE TRANSACTIONS ===
     {
       id: 'legitimate-low',
       name: 'Legitimate - Low Value',
       type: 'legitimate',
-      description: 'Normal transaction from trusted customer',
+      description: 'Regular customer, $50 purchase, trusted device',
       icon: CheckCircle,
       color: 'text-green-600',
     },
@@ -49,39 +50,109 @@ export default function TransactionSimulator() {
       id: 'legitimate-high',
       name: 'Legitimate - High Value',
       type: 'legitimate',
-      description: 'Large transaction from verified customer',
+      description: '2-year customer, $1,500 purchase, verified',
       icon: CheckCircle,
       color: 'text-green-600',
     },
     {
+      id: 'legitimate-repeat',
+      name: 'Legitimate - Repeat Customer',
+      type: 'legitimate',
+      description: 'Loyal customer, normal purchase pattern',
+      icon: CheckCircle,
+      color: 'text-green-600',
+    },
+    
+    // === FRAUD: VELOCITY ATTACKS ===
+    {
       id: 'fraud-velocity',
       name: 'Fraud - High Velocity',
       type: 'fraud',
-      description: 'Multiple rapid transactions',
+      description: '15 rapid transactions in 10 minutes',
       icon: AlertTriangle,
       color: 'text-red-600',
     },
+    {
+      id: 'fraud-velocity-high',
+      name: 'Fraud - Extreme Velocity',
+      type: 'fraud',
+      description: '22 transactions in 5 minutes - Extreme attack',
+      icon: AlertTriangle,
+      color: 'text-red-600',
+    },
+    
+    // === FRAUD: BLACKLIST ===
     {
       id: 'fraud-blacklist',
       name: 'Fraud - Blacklisted IP',
       type: 'fraud',
-      description: 'Transaction from known fraudulent IP',
+      description: 'Known fraudulent IP (198.51.100.1)',
       icon: AlertTriangle,
       color: 'text-red-600',
     },
+    
+    // === FRAUD: GEOLOCATION ===
     {
       id: 'fraud-geolocation',
-      name: 'Fraud - Suspicious Location',
+      name: 'Fraud - Location Mismatch',
       type: 'fraud',
-      description: 'Transaction from unusual country',
+      description: 'Russia IP with US billing address',
       icon: AlertTriangle,
       color: 'text-red-600',
     },
     {
-      id: 'fraud-new-customer',
-      name: 'Fraud - New Customer High Amount',
+      id: 'fraud-geolocation-extreme',
+      name: 'Fraud - High-Risk Country',
       type: 'fraud',
-      description: 'First-time buyer with large purchase',
+      description: 'China IP with Texas billing - Extreme mismatch',
+      icon: AlertTriangle,
+      color: 'text-red-600',
+    },
+    
+    // === FRAUD: NEW CUSTOMER ===
+    {
+      id: 'fraud-new-customer',
+      name: 'Fraud - New Customer High Value',
+      type: 'fraud',
+      description: '$2,999 from 0-day account',
+      icon: AlertTriangle,
+      color: 'text-red-600',
+    },
+    {
+      id: 'fraud-new-extreme',
+      name: 'Fraud - New Customer Extreme',
+      type: 'fraud',
+      description: '$4,599 from brand new account - Extreme risk',
+      icon: AlertTriangle,
+      color: 'text-red-600',
+    },
+    
+    // === FRAUD: AMOUNT ANOMALY ===
+    {
+      id: 'fraud-amount-spike',
+      name: 'Fraud - Amount Spike',
+      type: 'fraud',
+      description: '$3,500 when average is $45 (77x spike)',
+      icon: AlertTriangle,
+      color: 'text-red-600',
+    },
+    
+    // === FRAUD: UNUSUAL TIME ===
+    {
+      id: 'fraud-unusual-time',
+      name: 'Fraud - Unusual Time',
+      type: 'fraud',
+      description: 'High-value purchase at 3:47 AM',
+      icon: AlertTriangle,
+      color: 'text-red-600',
+    },
+    
+    // === FRAUD: PERFECT STORM ===
+    {
+      id: 'fraud-perfect-storm',
+      name: 'Fraud - Perfect Storm',
+      type: 'fraud',
+      description: 'New customer + High amount + Foreign IP + Velocity',
       icon: AlertTriangle,
       color: 'text-red-600',
     },
@@ -198,8 +269,8 @@ export default function TransactionSimulator() {
           <CardHeader>
             <CardTitle>Quick Test - Run All Scenarios</CardTitle>
             <CardDescription>
-              Automatically test all fraud detection patterns including legitimate transactions, high velocity attacks, 
-              blacklisted IPs, suspicious geolocations, and new customer fraud attempts.
+              Test all {scenarios.length} fraud detection scenarios including legitimate transactions, velocity attacks, 
+              blacklisted IPs, geolocation anomalies, amount spikes, and combined fraud patterns. Shows how ML ensemble handles different fraud types.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -210,7 +281,7 @@ export default function TransactionSimulator() {
               className="w-full"
             >
               <Zap className="mr-2 h-5 w-5" />
-              {running ? 'Running All Scenarios...' : 'Run All Scenarios (6 Tests)'}
+              {running ? `Running Scenarios... (${results.length}/${scenarios.length})` : `Run All Scenarios (${scenarios.length} Tests)`}
             </Button>
           </CardContent>
         </Card>
