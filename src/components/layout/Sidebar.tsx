@@ -21,7 +21,6 @@ const menuItems = [
   { title: "Fraud Alerts", url: "/alerts", icon: AlertTriangle },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
   { title: "Vendors", url: "/vendors", icon: Store },
-  { title: "Demo Store", url: "/shop", icon: Shield },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 

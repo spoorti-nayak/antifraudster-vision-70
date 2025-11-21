@@ -17,11 +17,6 @@ import Analytics from "./pages/Analytics";
 import Vendors from "./pages/Vendors";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
-import Shop from "./pages/Shop";
-import ShopCart from "./pages/ShopCart";
-import ShopCheckout from "./pages/ShopCheckout";
-import ShopSettings from "./pages/ShopSettings";
-import ShopSuccess from "./pages/ShopSuccess";
 import DashboardLayout from "./layout/DashboardLayout";
 
 const queryClient = new QueryClient();
@@ -40,11 +35,6 @@ const App = () => (
               <Route path="/signup" element={<Signup />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/shop" element={<Shop />} />
-              <Route path="/shop/cart" element={<ShopCart />} />
-              <Route path="/shop/checkout" element={<ShopCheckout />} />
-              <Route path="/shop/settings" element={<ShopSettings />} />
-              <Route path="/shop/success" element={<ShopSuccess />} />
               <Route path="/" element={<DashboardLayout />}>
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="transactions" element={<Transactions />} />
