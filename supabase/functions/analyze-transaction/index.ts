@@ -187,12 +187,30 @@ serve(async (req) => {
       });
     }
 
-    // 9. Save ML training data
+    // 9. Call ML models for enhanced prediction (optional layer)
+    let mlPrediction = null;
+    try {
+      const mlFeatures = extractFeatures(requestData, customerProfile);
+      const { data: mlData } = await supabaseClient.functions.invoke('ml-predict', {
+        body: { features: mlFeatures }
+      });
+      if (mlData) {
+        mlPrediction = mlData;
+        console.log('ML prediction received:', mlPrediction);
+        // ML prediction can be used to adjust final decision in future
+        // For now, we use rule-based scoring but log ML results
+      }
+    } catch (mlError) {
+      console.warn('ML prediction unavailable, using rule-based only:', mlError);
+    }
+
+    // 10. Save ML training data
     await supabaseClient.from('ml_training_data').insert({
       transaction_id: transaction.id,
       features: extractFeatures(requestData, customerProfile),
       label: fraudAnalysis.should_block, // Will be updated manually if needed
-      confidence: fraudAnalysis.score
+      confidence: fraudAnalysis.score / 100,
+      model_version: mlPrediction?.model_used || 'rule_based'
     });
 
     console.log('Transaction processed:', transaction.id);

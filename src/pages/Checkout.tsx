@@ -88,20 +88,51 @@ export default function Checkout() {
 
       if (itemsError) throw itemsError;
 
-      // Call fraud detection edge function
+      // Check if fraud detection is enabled for this merchant
+      if (!user.merchantProfile?.fraud_detection_enabled) {
+        console.log('Fraud detection disabled, approving order');
+        await (supabase as any)
+          .from('orders')
+          .update({ status: 'completed', fraud_score: 0 })
+          .eq('id', order.id);
+        
+        clearCart();
+        toast.success('Order placed successfully!');
+        navigate('/shop');
+        return;
+      }
+
+      // Get merchant API key
+      const merchantApiKey = user.merchantProfile?.api_key;
+      if (!merchantApiKey) {
+        console.error('Merchant API key not found');
+        toast.error('Store configuration error. Please contact support.');
+        return;
+      }
+
+      // Call fraud detection edge function with proper merchant authentication
       const transactionData = {
-        transaction_id: order.id,
+        merchant_api_key: merchantApiKey,
         amount: totalPrice,
         currency: 'USD',
         customer_email: data.email,
-        customer_name: data.fullName,
+        customer_ip: '0.0.0.0', // TODO: Get real IP from request headers
+        customer_device: navigator.userAgent,
+        customer_location: {
+          country: data.country,
+          city: data.city
+        },
         payment_method: 'credit_card',
-        billing_address: `${data.address}, ${data.city}`,
-        ip_address: '0.0.0.0', // In production, get real IP
-        device_fingerprint: navigator.userAgent,
-        merchant_id: user.merchantProfile?.id || user.id,
+        card_last4: data.cardNumber.slice(-4),
+        metadata: {
+          order_id: order.id,
+          customer_name: data.fullName,
+          billing_address: `${data.address}, ${data.city}, ${data.postalCode}, ${data.country}`,
+          shipping_address: `${data.address}, ${data.city}, ${data.postalCode}, ${data.country}`
+        }
       };
 
+      console.log('Sending transaction for fraud analysis...');
       const { data: fraudResult, error: fraudError } = await supabase.functions.invoke(
         'analyze-transaction',
         { body: transactionData }
@@ -109,19 +140,34 @@ export default function Checkout() {
 
       if (fraudError) {
         console.error('Fraud check error:', fraudError);
-        // Continue with order even if fraud check fails
+        toast.error('Fraud detection service unavailable. Order will be reviewed manually.');
+        await (supabase as any)
+          .from('orders')
+          .update({ status: 'pending', fraud_score: 0 })
+          .eq('id', order.id);
+        navigate('/shop');
+        return;
       }
 
-      // Check fraud result
-      if (fraudResult?.is_fraud) {
+      console.log('Fraud analysis result:', fraudResult);
+
+      // Check fraud result status
+      if (fraudResult?.status === 'blocked') {
         // Update order status to blocked
         await (supabase as any)
           .from('orders')
-          .update({ status: 'blocked', fraud_score: fraudResult.fraud_score })
+          .update({ 
+            status: 'blocked', 
+            fraud_score: fraudResult.fraud_score / 100 
+          })
           .eq('id', order.id);
 
+        const explanation = fraudResult.explanation?.summary || 
+                          fraudResult.reasons?.join(', ') || 
+                          'Transaction blocked due to suspicious activity';
+
         toast.error(
-          `Payment Blocked - Fraud Detected!\nRisk Score: ${(fraudResult.fraud_score * 100).toFixed(0)}%\n${fraudResult.explanation}`,
+          `⛔ Payment Blocked - Fraud Detected!\n\nFraud Score: ${fraudResult.fraud_score}%\n\n${explanation}`,
           { duration: 10000 }
         );
         
@@ -129,12 +175,12 @@ export default function Checkout() {
         return;
       }
 
-      // Update order status to completed
+      // Update order status to completed (approved or flagged but allowed)
       await (supabase as any)
         .from('orders')
         .update({ 
-          status: 'completed',
-          fraud_score: fraudResult?.fraud_score || 0 
+          status: fraudResult?.status === 'flagged' ? 'flagged' : 'completed',
+          fraud_score: fraudResult?.fraud_score ? fraudResult.fraud_score / 100 : 0
         })
         .eq('id', order.id);
 
