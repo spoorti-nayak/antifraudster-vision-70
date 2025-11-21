@@ -122,12 +122,31 @@ serve(async (req) => {
       geolocation: testData.geolocation,
     };
 
-    console.log("Calling analyze-transaction with merchant_id:", merchant_id);
+    console.log("Calling analyze-transaction with merchant_api_key");
 
     // Call the AntiFraudster fraud detection function - REAL ML ANALYSIS
     const { data: fraudResult, error: fraudError } = await supabaseClient.functions.invoke(
       "analyze-transaction",
-      { body: transactionData }
+      { 
+        body: {
+          merchant_api_key: merchant_api_key,
+          amount: testData.amount,
+          currency: "USD",
+          customer_email: testData.customer_email,
+          customer_ip: testData.ip_address,
+          customer_device: testData.device_fingerprint,
+          customer_location: testData.geolocation,
+          payment_method: "credit_card",
+          metadata: {
+            customer_name: testData.customer_name,
+            billing_address: testData.billing_address,
+            customer_age_days: testData.customer_age_days,
+            transaction_velocity: testData.transaction_velocity,
+            simulation: true,
+            scenario: scenario,
+          }
+        }
+      }
     );
 
     if (fraudError) {
@@ -137,32 +156,21 @@ serve(async (req) => {
 
     console.log("Fraud detection result:", fraudResult);
 
-    // Save to transactions table for tracking
-    await supabaseClient.from("transactions").insert({
-      transaction_id: transactionId,
-      merchant_id: merchant_id,
-      amount: testData.amount,
-      currency: "USD",
-      status: fraudResult.is_fraud ? "blocked" : "approved",
-      fraud_score: fraudResult.fraud_score,
-      customer_email: testData.customer_email,
-      ip_address: testData.ip_address,
-      metadata: {
-        scenario,
-        simulation: true,
-        ...testData,
-      },
-    });
+    // Transaction is already saved by analyze-transaction edge function
+    // No need to save again here
 
+    const isBlocked = fraudResult.status === 'blocked';
+    const fraudScore = fraudResult.fraud_score / 100; // Convert to 0-1 range
+    
     return new Response(
       JSON.stringify({
         transaction_id: transactionId,
         type: scenario,
-        is_fraud: fraudResult.is_fraud,
-        fraud_score: fraudResult.fraud_score,
-        status: fraudResult.is_fraud ? "blocked" : "approved",
-        explanation: fraudResult.explanation,
-        risk_factors: fraudResult.risk_factors,
+        is_fraud: isBlocked,
+        fraud_score: fraudScore,
+        status: fraudResult.status,
+        explanation: fraudResult.explanation?.summary || fraudResult.reasons?.join(', ') || 'Transaction analyzed',
+        risk_factors: fraudResult.reasons || [],
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
