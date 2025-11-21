@@ -13,6 +13,7 @@ interface MerchantProfile {
   api_key: string;
   domain: string;
   webhook_url?: string;
+  fraud_detection_enabled?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -29,188 +30,228 @@ interface User {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (userData: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    company: string;
-    password: string;
-  }) => Promise<void>;
+  register: (userData: RegisterData) => Promise<void>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
 }
 
-export const AuthContext = createContext<AuthContextType | null>(null);
+interface RegisterData {
+  firstName: string;
+  lastName: string;
+  email: string;
+  company: string;
+  password: string;
+}
+
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 };
 
-export const useAuthProvider = () => {
+export const useAuthProvider = (): AuthContextType => {
+  const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const navigate = useNavigate();
 
-  const loadMerchantProfile = async (userId: string): Promise<MerchantProfile | null> => {
+  const loadMerchantProfile = async (userId: string, email: string) => {
     try {
-      const { data, error } = await supabase
-        .from('merchants')
+      const { data: profileData, error: profileError } = await (supabase as any)
+        .from('merchant_profiles')
         .select('*')
         .eq('user_id', userId)
         .single();
 
-      if (error) throw error;
-      return data;
+      if (profileError) {
+        console.error('Error loading merchant profile:', profileError);
+        return null;
+      }
+
+      return profileData as MerchantProfile;
     } catch (error) {
-      console.error('Error loading merchant profile:', error);
+      console.error('Error in loadMerchantProfile:', error);
       return null;
     }
   };
 
   useEffect(() => {
-    // Set up auth state listener - NEVER use async directly to avoid deadlocks
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) {
-        // Defer Supabase calls with setTimeout to avoid deadlock
-        setTimeout(() => {
-          loadMerchantProfile(session.user.id).then((profile) => {
-            setUser({
-              id: session.user.id,
-              email: session.user.email!,
-              firstName: profile?.first_name || '',
-              lastName: profile?.last_name || '',
-              company: profile?.company_name || '',
-              merchantProfile: profile || undefined,
-            });
-            setIsLoading(false);
+    const initAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user) {
+          const merchantProfile = await loadMerchantProfile(session.user.id, session.user.email!);
+          
+          setUser({
+            id: session.user.id,
+            email: session.user.email!,
+            firstName: merchantProfile?.first_name || '',
+            lastName: merchantProfile?.last_name || '',
+            company: merchantProfile?.company_name || '',
+            merchantProfile: merchantProfile || undefined,
           });
-        }, 0);
-      } else {
+        }
+      } catch (error) {
+        console.error('Error initializing auth:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        const merchantProfile = await loadMerchantProfile(session.user.id, session.user.email!);
+        
+        setUser({
+          id: session.user.id,
+          email: session.user.email!,
+          firstName: merchantProfile?.first_name || '',
+          lastName: merchantProfile?.last_name || '',
+          company: merchantProfile?.company_name || '',
+          merchantProfile: merchantProfile || undefined,
+        });
+        setIsLoading(false);
+      } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setIsLoading(false);
       }
     });
 
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        loadMerchantProfile(session.user.id).then((profile) => {
-          setUser({
-            id: session.user.id,
-            email: session.user.email!,
-            firstName: profile?.first_name || '',
-            lastName: profile?.last_name || '',
-            company: profile?.company_name || '',
-            merchantProfile: profile || undefined,
-          });
-          setIsLoading(false);
-        });
-      } else {
-        setIsLoading(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const login = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) throw error;
-  };
-
-  const register = async (userData: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    company: string;
-    password: string;
-  }) => {
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: userData.email,
-      password: userData.password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/dashboard`,
-        data: {
-          first_name: userData.firstName,
-          last_name: userData.lastName,
-          company_name: userData.company,
-        }
-      }
-    });
-
-    if (authError) throw authError;
-    if (!authData.user) throw new Error('User creation failed');
-
-    const { error: profileError } = await supabase
-      .from('merchants')
-      .insert({
-        name: userData.company,
-        domain: '',
-        user_id: authData.user.id,
-        first_name: userData.firstName,
-        last_name: userData.lastName,
-        company_name: userData.company,
-        email: userData.email,
+    try {
+      setIsLoading(true);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
-    if (profileError) throw profileError;
+      if (error) throw error;
+
+      if (data.user) {
+        const merchantProfile = await loadMerchantProfile(data.user.id, data.user.email!);
+        
+        setUser({
+          id: data.user.id,
+          email: data.user.email!,
+          firstName: merchantProfile?.first_name || '',
+          lastName: merchantProfile?.last_name || '',
+          company: merchantProfile?.company_name || '',
+          merchantProfile: merchantProfile || undefined,
+        });
+
+        navigate('/dashboard');
+      }
+    } catch (error: any) {
+      console.error('Login error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const register = async (userData: RegisterData) => {
+    try {
+      setIsLoading(true);
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: userData.email,
+        password: userData.password,
+        options: {
+          data: {
+            first_name: userData.firstName,
+            last_name: userData.lastName,
+          }
+        }
+      });
+
+      if (authError) throw authError;
+
+      if (authData.user) {
+        const { error: profileError } = await (supabase as any)
+          .from('merchant_profiles')
+          .insert({
+            user_id: authData.user.id,
+            first_name: userData.firstName,
+            last_name: userData.lastName,
+            company_name: userData.company,
+            email: userData.email,
+            api_key: `sk_live_${crypto.randomUUID().replace(/-/g, '')}`,
+          });
+
+        if (profileError) {
+          console.error('Profile creation error:', profileError);
+        }
+
+        navigate('/login');
+      }
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const logout = async () => {
     try {
       await supabase.auth.signOut();
-    } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
       setUser(null);
       navigate('/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+      throw error;
     }
   };
 
   const refreshAuth = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      
       if (session?.user) {
-        const profile = await loadMerchantProfile(session.user.id);
+        const merchantProfile = await loadMerchantProfile(session.user.id, session.user.email!);
         
         setUser({
           id: session.user.id,
           email: session.user.email!,
-          firstName: profile?.first_name || '',
-          lastName: profile?.last_name || '',
-          company: profile?.company_name || '',
-          merchantProfile: profile || undefined,
+          firstName: merchantProfile?.first_name || '',
+          lastName: merchantProfile?.last_name || '',
+          company: merchantProfile?.company_name || '',
+          merchantProfile: merchantProfile || undefined,
         });
       }
     } catch (error) {
-      console.error('Session refresh failed:', error);
-      await logout();
+      console.error('Error refreshing auth:', error);
     }
   };
 
   const resetPassword = async (email: string) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-    
-    if (error) throw error;
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Password reset error:', error);
+      throw error;
+    }
   };
 
   return {
     user,
     isLoading,
-    isAuthenticated: !!user,
     login,
     register,
     logout,
