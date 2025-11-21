@@ -1,63 +1,36 @@
 import { useState, useEffect } from "react";
-import { ShoppingCart, Search, Filter } from "lucide-react";
+import { ShoppingCart, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
-
-interface Product {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  image_url: string;
-  category: string;
-  stock: number;
-}
+import { demoProducts, Product } from "@/data/products";
 
 const Shop = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [cart, setCart] = useState<{[key: string]: number}>({});
+  const [cart, setCart] = useState<{ [key: string]: number }>({});
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchProducts();
+    // Load demo products locally so the shop works even if the backend is offline
+    setProducts(demoProducts);
+    setLoading(false);
+
     // Load cart from localStorage
-    const savedCart = localStorage.getItem('shop_cart');
+    const savedCart = localStorage.getItem("shop_cart");
     if (savedCart) {
       setCart(JSON.parse(savedCart));
     }
   }, []);
 
-  const fetchProducts = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setProducts(data || []);
-    } catch (error) {
-      console.error('Error fetching products:', error);
-      toast.error('Failed to load products');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const addToCart = (productId: string) => {
     const newCart = { ...cart, [productId]: (cart[productId] || 0) + 1 };
     setCart(newCart);
-    localStorage.setItem('shop_cart', JSON.stringify(newCart));
-    toast.success('Added to cart');
+    localStorage.setItem("shop_cart", JSON.stringify(newCart));
   };
 
   const categories = ["all", ...Array.from(new Set(products.map(p => p.category)))];

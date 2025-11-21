@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -16,11 +15,11 @@ const ShopSettings = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
-    storeName: '',
-    storeUrl: '',
-    antifraudsterApiKey: '',
+    storeName: "",
+    storeUrl: "",
+    antifraudsterApiKey: "",
     antifraudsterEnabled: false,
-    webhookSecret: ''
+    webhookSecret: "",
   });
   const navigate = useNavigate();
 
@@ -28,34 +27,28 @@ const ShopSettings = () => {
     loadSettings();
   }, []);
 
-  const loadSettings = async () => {
+  const loadSettings = () => {
     try {
-      const { data, error } = await supabase
-        .from('ecommerce_settings')
-        .select('*')
-        .single();
-
-      if (error && error.code !== 'PGRST116') throw error;
-
-      if (data) {
+      const raw = localStorage.getItem("shop_settings");
+      if (raw) {
+        const data = JSON.parse(raw);
         setSettings(data);
         setFormData({
-          storeName: data.store_name || '',
-          storeUrl: data.store_url || '',
-          antifraudsterApiKey: data.antifraudster_api_key || '',
+          storeName: data.store_name || "",
+          storeUrl: data.store_url || "",
+          antifraudsterApiKey: data.antifraudster_api_key || "",
           antifraudsterEnabled: data.antifraudster_enabled || false,
-          webhookSecret: data.webhook_secret || ''
+          webhookSecret: data.webhook_secret || "",
         });
       }
     } catch (error) {
-      console.error('Error loading settings:', error);
-      toast.error('Failed to load settings');
+      console.error("Error loading settings:", error);
+      toast.error("Failed to load settings");
     } finally {
       setLoading(false);
     }
   };
-
-  const handleSave = async () => {
+  const handleSave = () => {
     setSaving(true);
     try {
       const payload = {
@@ -63,32 +56,19 @@ const ShopSettings = () => {
         store_url: formData.storeUrl,
         antifraudster_api_key: formData.antifraudsterApiKey,
         antifraudster_enabled: formData.antifraudsterEnabled,
-        webhook_secret: formData.webhookSecret
+        webhook_secret: formData.webhookSecret,
       };
 
-      if (settings) {
-        const { error } = await supabase
-          .from('ecommerce_settings')
-          .update(payload)
-          .eq('id', settings.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('ecommerce_settings')
-          .insert(payload);
-        if (error) throw error;
-      }
-
-      toast.success('Settings saved successfully');
-      loadSettings();
+      localStorage.setItem("shop_settings", JSON.stringify(payload));
+      setSettings(payload);
+      toast.success("Settings saved successfully");
     } catch (error) {
-      console.error('Error saving settings:', error);
-      toast.error('Failed to save settings');
+      console.error("Error saving settings:", error);
+      toast.error("Failed to save settings");
     } finally {
       setSaving(false);
     }
   };
-
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     toast.success(`${label} copied to clipboard`);

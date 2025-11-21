@@ -2,16 +2,9 @@ import { useState, useEffect } from "react";
 import { Trash2, ArrowLeft, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-
-interface Product {
-  id: string;
-  name: string;
-  price: number;
-  image_url: string;
-}
+import { demoProducts, Product } from "@/data/products";
 
 interface CartItem extends Product {
   quantity: number;
@@ -28,7 +21,7 @@ const ShopCart = () => {
 
   const loadCart = async () => {
     try {
-      const savedCart = localStorage.getItem('shop_cart');
+      const savedCart = localStorage.getItem("shop_cart");
       if (!savedCart) {
         setLoading(false);
         return;
@@ -42,22 +35,18 @@ const ShopCart = () => {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, name, price, image_url')
-        .in('id', productIds);
-
-      if (error) throw error;
-
-      const items: CartItem[] = (data || []).map(product => ({
-        ...product,
-        quantity: cart[product.id]
-      }));
+      const items: CartItem[] = productIds
+        .map((id) => {
+          const product = demoProducts.find((p) => p.id === id);
+          if (!product) return null;
+          return { ...product, quantity: cart[id] };
+        })
+        .filter(Boolean) as CartItem[];
 
       setCartItems(items);
     } catch (error) {
-      console.error('Error loading cart:', error);
-      toast.error('Failed to load cart');
+      console.error("Error loading cart:", error);
+      toast.error("Failed to load cart");
     } finally {
       setLoading(false);
     }
