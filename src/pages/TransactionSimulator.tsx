@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { PlayCircle, AlertTriangle, CheckCircle, Zap } from 'lucide-react';
+import { PlayCircle, AlertTriangle, CheckCircle, Zap, ArrowLeft, ShieldAlert } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface SimulationResult {
   transaction_id: string;
@@ -13,11 +16,25 @@ interface SimulationResult {
   fraud_score: number;
   status: string;
   explanation?: string;
+  risk_factors?: string[];
 }
 
 export default function TransactionSimulator() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<SimulationResult[]>([]);
+  const [fraudDetectionEnabled, setFraudDetectionEnabled] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    
+    // Check if fraud detection is enabled
+    setFraudDetectionEnabled(user.merchantProfile?.fraud_detection_enabled || false);
+  }, [user, navigate]);
 
   const scenarios = [
     {
@@ -71,9 +88,18 @@ export default function TransactionSimulator() {
   ];
 
   const simulateTransaction = async (scenarioId: string) => {
+    if (!user?.merchantProfile?.api_key) {
+      toast.error('Please configure your store API key first');
+      return;
+    }
+
     try {
       const { data, error } = await supabase.functions.invoke('generate-test-transaction', {
-        body: { scenario: scenarioId },
+        body: { 
+          scenario: scenarioId,
+          merchant_id: user.merchantProfile.id,
+          merchant_api_key: user.merchantProfile.api_key,
+        },
       });
 
       if (error) throw error;
@@ -81,9 +107,12 @@ export default function TransactionSimulator() {
       setResults(prev => [data, ...prev]);
       
       if (data.is_fraud) {
-        toast.error(`Fraud Detected! Score: ${(data.fraud_score * 100).toFixed(0)}%`);
+        toast.error(`⛔ Fraud Detected! Score: ${(data.fraud_score * 100).toFixed(0)}%`, {
+          description: data.explanation,
+          duration: 5000,
+        });
       } else {
-        toast.success('Transaction Approved!');
+        toast.success(`✅ Transaction Approved! Score: ${(data.fraud_score * 100).toFixed(0)}%`);
       }
 
       return data;
@@ -102,7 +131,7 @@ export default function TransactionSimulator() {
       for (const scenario of scenarios) {
         await simulateTransaction(scenario.id);
         // Small delay between transactions
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 1500));
       }
       toast.success('All scenarios completed!');
     } catch (error) {
@@ -112,21 +141,65 @@ export default function TransactionSimulator() {
     }
   };
 
+  if (!user) {
+    return null;
+  }
+
+  if (!user.merchantProfile?.api_key) {
+    return (
+      <div className="container mx-auto px-4 py-8 max-w-4xl">
+        <Button variant="ghost" onClick={() => navigate('/shop')} className="mb-6">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Shop
+        </Button>
+        
+        <Alert variant="destructive">
+          <ShieldAlert className="h-4 w-4" />
+          <AlertDescription>
+            Please generate an API key in Store Settings before using the simulator.
+            <Link to="/store-settings" className="block mt-2">
+              <Button variant="outline">Go to Store Settings</Button>
+            </Link>
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
+      <Button variant="ghost" onClick={() => navigate('/shop')} className="mb-6">
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        Back to Shop
+      </Button>
+
       <div className="mb-8">
-        <h1 className="text-4xl font-bold text-foreground mb-2">Transaction Simulator</h1>
+        <h1 className="text-4xl font-bold text-foreground mb-2">E-Commerce Transaction Simulator</h1>
         <p className="text-muted-foreground">
-          Test fraud detection with various transaction scenarios
+          Test AntiFraudster fraud detection with various transaction scenarios. Transactions are analyzed in real-time using ML models.
         </p>
       </div>
+
+      {!fraudDetectionEnabled && (
+        <Alert className="mb-6">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Fraud detection is currently disabled. Enable it in{' '}
+            <Link to="/store-settings" className="font-semibold underline">
+              Store Settings
+            </Link>{' '}
+            to see real-time fraud analysis.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid gap-6 mb-8">
         <Card>
           <CardHeader>
-            <CardTitle>Quick Test</CardTitle>
+            <CardTitle>Quick Test - Run All Scenarios</CardTitle>
             <CardDescription>
-              Run all scenarios automatically to demonstrate fraud detection capabilities
+              Automatically test all fraud detection patterns including legitimate transactions, high velocity attacks, 
+              blacklisted IPs, suspicious geolocations, and new customer fraud attempts.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -137,7 +210,7 @@ export default function TransactionSimulator() {
               className="w-full"
             >
               <Zap className="mr-2 h-5 w-5" />
-              {running ? 'Running All Scenarios...' : 'Run All Scenarios'}
+              {running ? 'Running All Scenarios...' : 'Run All Scenarios (6 Tests)'}
             </Button>
           </CardContent>
         </Card>
@@ -176,7 +249,7 @@ export default function TransactionSimulator() {
           <CardHeader>
             <CardTitle>Simulation Results</CardTitle>
             <CardDescription>
-              {results.length} transaction{results.length !== 1 ? 's' : ''} tested
+              {results.length} transaction{results.length !== 1 ? 's' : ''} analyzed by AntiFraudster ML models
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -208,12 +281,26 @@ export default function TransactionSimulator() {
                   <div className="text-sm text-muted-foreground mb-1">
                     Transaction ID: {result.transaction_id.slice(0, 8)}...
                   </div>
-                  <div className="text-sm font-medium">
-                    Status: <span className="uppercase">{result.status}</span>
+                  <div className="text-sm font-medium mb-2">
+                    Status: <span className={`uppercase ${result.is_fraud ? 'text-destructive' : 'text-green-600'}`}>
+                      {result.status}
+                    </span>
                   </div>
                   {result.explanation && (
-                    <div className="mt-2 text-sm text-muted-foreground italic">
-                      {result.explanation}
+                    <div className="mt-2 p-3 bg-background rounded border">
+                      <p className="text-sm font-medium mb-1">AI Explanation (XAI):</p>
+                      <p className="text-sm text-muted-foreground italic">
+                        {result.explanation}
+                      </p>
+                    </div>
+                  )}
+                  {result.risk_factors && result.risk_factors.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {result.risk_factors.map((factor, idx) => (
+                        <Badge key={idx} variant="outline" className="text-xs">
+                          {factor}
+                        </Badge>
+                      ))}
                     </div>
                   )}
                 </div>

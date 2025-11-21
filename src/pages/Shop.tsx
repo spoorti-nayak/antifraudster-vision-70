@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
-import { ShoppingCart, Search } from 'lucide-react';
+import { ShoppingCart, Search, Zap } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -97,12 +97,20 @@ export default function Shop() {
           <h1 className="text-4xl font-bold text-foreground">TechStore Pro</h1>
           <p className="text-muted-foreground mt-2">Premium tech products for everyone</p>
         </div>
-        <Link to="/cart">
-          <Button variant="outline" size="lg">
-            <ShoppingCart className="mr-2 h-5 w-5" />
-            Cart
-          </Button>
-        </Link>
+        <div className="flex gap-3">
+          <Link to="/simulator">
+            <Button variant="outline" size="lg">
+              <Zap className="mr-2 h-5 w-5" />
+              Test Simulator
+            </Button>
+          </Link>
+          <Link to="/cart">
+            <Button variant="outline" size="lg">
+              <ShoppingCart className="mr-2 h-5 w-5" />
+              Cart
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <div className="mb-8 space-y-4">
