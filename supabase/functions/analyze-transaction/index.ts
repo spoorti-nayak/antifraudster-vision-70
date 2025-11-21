@@ -46,21 +46,20 @@ serve(async (req) => {
 
     // 1. Verify merchant API key
     const { data: merchant, error: merchantError } = await supabaseClient
-      .from('merchants')
+      .from('merchant_profiles')
       .select('*')
       .eq('api_key', requestData.merchant_api_key)
-      .eq('is_active', true)
       .single();
 
     if (merchantError || !merchant) {
-      console.error('Invalid merchant API key');
+      console.error('Invalid merchant API key:', merchantError);
       return new Response(
-        JSON.stringify({ error: 'Invalid or inactive merchant API key' }),
+        JSON.stringify({ error: 'Invalid merchant API key' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Merchant verified:', merchant.name);
+    console.log('Merchant verified:', merchant.company_name);
 
     // 2. Check blocklist first
     const { data: blockedItems } = await supabaseClient
