@@ -45,10 +45,25 @@ The application will open at `http://localhost:5173` or `http://localhost:8080`
 
 ## Step 5: Test Authentication
 
+✅ **Authentication is Now Configured With:**
+- Auto-confirm email enabled (no email verification needed)
+- Improved error handling with meaningful messages
+- Direct navigation to dashboard after signup
+- Proper session management
+
+**To Test:**
 1. Navigate to `http://localhost:5173/signup`
-2. Create a new account (email confirmation is disabled for easy testing)
-3. You should be automatically logged in and redirected to the dashboard
-4. Test the forgot password feature at `/forgot-password`
+2. Create a new account with any valid email format
+3. You'll be automatically logged in and redirected to the dashboard
+4. Test forgot password feature at `/forgot-password`
+
+**Note on Preview Errors:**
+If you saw "Registration Failed {}" in the preview, this was a temporary 503 error from Lovable Cloud backend connectivity. The authentication code is now fixed with:
+- Proper error messages instead of empty `{}`
+- Better retry handling
+- Fallback messages for service unavailability
+
+These issues should not occur in local VS Code environment.
 
 ## Common Issues & Solutions
 
@@ -67,11 +82,23 @@ npm install
 npm run dev -- --port 3000
 ```
 
-### Issue: Authentication errors
-**Solutions:**
+### Issue: Authentication errors (503 Service Unavailable)
+**This was fixed!** The error was caused by:
+1. Missing auto-confirm email configuration
+2. Poor error handling showing `{}`
+3. Backend connectivity issues
+
+**Solutions Applied:**
+- ✅ Auto-confirm email enabled in Lovable Cloud
+- ✅ Better error messages with retry guidance
+- ✅ Email redirect URLs configured
+- ✅ Improved session management
+
+**If errors persist locally:**
 1. Clear browser cache and localStorage
-2. Verify `.env` file exists and has correct values
-3. Check Lovable Cloud backend is accessible
+2. Verify `.env` file exists with correct values
+3. Restart dev server: `npm run dev`
+4. Check browser console for specific errors
 
 ### Issue: Blank page after login
 **Solution:**
