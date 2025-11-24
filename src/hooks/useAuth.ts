@@ -138,7 +138,9 @@ export const useAuthProvider = (): AuthContextType => {
         password,
       });
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(error.message || 'Login failed. Please check your credentials.');
+      }
 
       if (data.user) {
         const merchantProfile = await loadMerchantProfile(data.user.id, data.user.email!);
@@ -156,7 +158,8 @@ export const useAuthProvider = (): AuthContextType => {
       }
     } catch (error: any) {
       console.error('Login error:', error);
-      throw error;
+      const errorMessage = error?.message || error?.error_description || 'Login failed. The authentication service is temporarily unavailable. Please try again.';
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -169,6 +172,7 @@ export const useAuthProvider = (): AuthContextType => {
         email: userData.email,
         password: userData.password,
         options: {
+          emailRedirectTo: `${window.location.origin}/dashboard`,
           data: {
             first_name: userData.firstName,
             last_name: userData.lastName,
@@ -176,7 +180,9 @@ export const useAuthProvider = (): AuthContextType => {
         }
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        throw new Error(authError.message || 'Registration failed. Please try again.');
+      }
 
       if (authData.user) {
         const { error: profileError } = await (supabase as any)
@@ -192,13 +198,16 @@ export const useAuthProvider = (): AuthContextType => {
 
         if (profileError) {
           console.error('Profile creation error:', profileError);
+          throw new Error('Failed to create merchant profile. Please contact support.');
         }
 
-        navigate('/login');
+        // Auto-confirm is enabled, so navigate to dashboard
+        navigate('/dashboard');
       }
     } catch (error: any) {
       console.error('Registration error:', error);
-      throw error;
+      const errorMessage = error?.message || error?.error_description || 'Registration failed. The authentication service is temporarily unavailable. Please try again in a few moments.';
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
