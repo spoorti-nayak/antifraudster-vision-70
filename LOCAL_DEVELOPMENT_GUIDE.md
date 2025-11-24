@@ -11,7 +11,31 @@ Before starting, make sure you have:
 - ✅ **npm** or **yarn** package manager
 - ✅ **VS Code** installed - [Download](https://code.visualstudio.com/)
 - ✅ **Git** installed - [Download](https://git-scm.com/)
-- ✅ **Supabase Account** - [Sign up](https://supabase.com/) (FREE tier works!)
+- ✅ **Docker Desktop** (optional, for local Supabase) - [Download](https://www.docker.com/products/docker-desktop)
+
+---
+
+## 🗄️ Choose Your Backend Setup
+
+You have **3 options** for running the backend:
+
+### Option A: Use Existing Lovable Cloud Instance (Easiest)
+- ✅ Already configured
+- ✅ No setup required
+- ✅ Just use the existing `.env` file
+- 👉 **Skip to Step 1**
+
+### Option B: Create Your Own Supabase Cloud Project (Recommended for Production)
+- ✅ Free tier available
+- ✅ Hosted and managed
+- ✅ Better for production/sharing
+- 👉 **Follow Section: "Setting Up Your Own Supabase Cloud Project"**
+
+### Option C: Run Fully Local Supabase (Advanced)
+- ✅ Completely offline
+- ✅ Full control
+- ✅ Requires Docker
+- 👉 **Follow Section: "Setting Up Local Supabase with Docker"**
 
 ---
 
@@ -110,14 +134,181 @@ EOF
 
 ---
 
-## 🗄️ Step 4: Set Up Database
+## 🆕 Setting Up Your Own Supabase Cloud Project
+
+**Choose this if you want your own Supabase instance on supabase.com**
+
+### Step 1: Create New Supabase Project
+
+1. Go to [https://supabase.com/dashboard](https://supabase.com/dashboard)
+2. Click "New Project"
+3. Fill in:
+   - **Name**: `antifraudster-project` (or any name)
+   - **Database Password**: Choose a strong password (save it!)
+   - **Region**: Select closest to you
+   - **Pricing Plan**: Free tier works perfectly
+4. Click "Create new project"
+5. Wait 2-3 minutes for setup to complete
+
+### Step 2: Get Your Project Keys
+
+1. In your new project, click "Settings" (gear icon) → "API"
+2. Copy these values:
+   - **Project URL** (e.g., `https://abcdefgh.supabase.co`)
+   - **Project ID** (e.g., `abcdefgh`)
+   - **anon/public key** (starts with `eyJ...`)
+   - **service_role key** (starts with `eyJ...`) - Keep this SECRET!
+
+### Step 3: Update Your .env Files
+
+Update `.env` in project root:
+```bash
+VITE_SUPABASE_PROJECT_ID="your_project_id_here"
+VITE_SUPABASE_PUBLISHABLE_KEY="your_anon_key_here"
+VITE_SUPABASE_URL="https://your_project_id.supabase.co"
+```
+
+Update `supabase/.env`:
+```bash
+SUPABASE_URL=https://your_project_id.supabase.co
+SUPABASE_ANON_KEY=your_anon_key_here
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
+LOVABLE_API_KEY=la_your_key_here
+```
+
+### Step 4: Configure Authentication
+
+1. In Supabase Dashboard → "Authentication" → "Providers"
+2. Enable "Email" provider
+3. In "Authentication" → "Settings":
+   - **Disable** email confirmations (for testing)
+   - Set **Site URL** to `http://localhost:8080`
+   - Add `http://localhost:8080/**` to "Redirect URLs"
+4. Click "Save"
+
+### Step 5: Run Database Migration
+
+1. Open "SQL Editor" in Supabase Dashboard
+2. Click "New Query"
+3. Copy entire contents of `MIGRATION.sql` from your project
+4. Paste into SQL Editor
+5. Click "Run"
+6. Verify: Go to "Table Editor" and check tables were created
+
+### Step 6: Set Up Storage Bucket (Optional)
+
+If your app needs file uploads:
+1. Go to "Storage" in Supabase Dashboard
+2. Click "Create bucket"
+3. Name: `products` (or as needed)
+4. Set to "Public" if files should be accessible
+5. Click "Create"
+
+---
+
+## 🐳 Setting Up Local Supabase with Docker
+
+**Choose this for completely offline development**
+
+### Prerequisites
+- ✅ Docker Desktop installed and running
+- ✅ Supabase CLI installed: `npm install -g supabase`
+
+### Step 1: Initialize Local Supabase
+
+```bash
+# In your project root
+supabase init
+
+# This creates:
+# - supabase/config.toml
+# - supabase/seed.sql
+# - .gitignore entries
+```
+
+### Step 2: Start Local Supabase Stack
+
+```bash
+supabase start
+```
+
+This command:
+- Downloads Docker images (first time only, ~2GB)
+- Starts PostgreSQL, PostgREST, Auth, Storage, etc.
+- Takes 2-5 minutes on first run
+- Shows you local credentials when complete
+
+**Save the output!** You'll see:
+```
+API URL: http://localhost:54321
+DB URL: postgresql://postgres:postgres@localhost:54322/postgres
+Studio URL: http://localhost:54323
+anon key: eyJ... (very long key)
+service_role key: eyJ... (very long key)
+```
+
+### Step 3: Update .env for Local Setup
+
+Update `.env`:
+```bash
+VITE_SUPABASE_PROJECT_ID="local"
+VITE_SUPABASE_PUBLISHABLE_KEY="the_anon_key_from_supabase_start"
+VITE_SUPABASE_URL="http://localhost:54321"
+```
+
+Update `supabase/.env`:
+```bash
+SUPABASE_URL=http://localhost:54321
+SUPABASE_ANON_KEY=anon_key_from_supabase_start
+SUPABASE_SERVICE_ROLE_KEY=service_role_key_from_supabase_start
+LOVABLE_API_KEY=la_your_key_here
+```
+
+### Step 4: Run Migration Locally
+
+```bash
+# Apply migration to local database
+supabase db reset
+
+# Or manually apply MIGRATION.sql
+supabase db push
+```
+
+### Step 5: Access Local Supabase Studio
+
+Open browser to `http://localhost:54323`
+- Username: (leave blank)
+- Password: (leave blank)
+- Full GUI for managing database, auth, storage
+
+### Step 6: Stop/Start Commands
+
+```bash
+# Stop local Supabase
+supabase stop
+
+# Start again (fast, uses cached containers)
+supabase start
+
+# Reset database (deletes all data)
+supabase db reset
+
+# View logs
+supabase logs
+```
+
+---
+
+## 🗄️ Step 4: Set Up Database (Skip if using Local Docker - already done!)
+
+**If you used Option B (Supabase Cloud) or Option A (Lovable Cloud):**
 
 ### 4.1 Run Migration
 
 Your database schema is in `MIGRATION.sql`. You need to run it:
 
 **Option A: Using Supabase Dashboard**
-1. Open [Supabase SQL Editor](https://supabase.com/dashboard/project/xvelszpgrkmkdpgzadrs/sql)
+1. Open [Supabase SQL Editor](https://supabase.com/dashboard) → Your Project → SQL Editor
 2. Click "New Query"
 3. Copy entire contents of `MIGRATION.sql`
 4. Paste and click "Run"
@@ -125,18 +316,21 @@ Your database schema is in `MIGRATION.sql`. You need to run it:
 
 **Option B: Using Supabase CLI**
 ```bash
-# Make sure you're linked to your project
-supabase link --project-ref xvelszpgrkmkdpgzadrs
+# Link to your cloud project
+supabase link --project-ref your_project_id
 
 # Run migration
 supabase db push
 ```
 
+**If you used Option C (Local Docker):**
+- Already done with `supabase db reset` command above! ✅
+
 ### 4.2 Verify Database
 
 Check that tables were created:
 ```bash
-# In Supabase Dashboard → Table Editor, you should see:
+# In Supabase Dashboard → Table Editor (or Studio for local), you should see:
 - merchant_profiles
 - transactions
 - customer_profiles
