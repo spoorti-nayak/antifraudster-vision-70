@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { apiService } from '@/services/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useCart } from '@/contexts/CartContext';
@@ -33,13 +33,7 @@ export default function ProductDetail() {
 
   const fetchProduct = async () => {
     try {
-      const { data, error } = await (supabase as any)
-        .from('products')
-        .select('*')
-        .eq('id', id)
-        .single();
-
-      if (error) throw error;
+      const data = await apiService.getProduct(id!);
       setProduct(data);
     } catch (error) {
       console.error('Error fetching product:', error);

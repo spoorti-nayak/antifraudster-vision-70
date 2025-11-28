@@ -20,7 +20,7 @@ import {
   CheckCircle,
   Clock
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiService } from "@/services/api";
 import { useAuth } from "@/hooks/useAuth";
 
 interface Transaction {
@@ -101,48 +101,22 @@ const TransactionsTable = forwardRef<TransactionsTableRef, TransactionsTableProp
 
     const loadTransactions = async () => {
       setIsLoading(true);
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('merchant_id', user.merchantProfile.id)
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      if (error) {
+      try {
+        const response = await apiService.getTransactions({ limit: 100 });
+        setTransactions(response.transactions || []);
+      } catch (error) {
         console.error('Error loading transactions:', error);
-      } else {
-        setTransactions(data || []);
       }
       setIsLoading(false);
     };
 
     loadTransactions();
 
-    // Subscribe to real-time updates
-    const channel = supabase
-      .channel('transactions')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'transactions',
-          filter: `merchant_id=eq.${user.merchantProfile.id}`
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            setTransactions(prev => [payload.new as Transaction, ...prev]);
-          } else if (payload.eventType === 'UPDATE') {
-            setTransactions(prev => prev.map(t => 
-              t.id === payload.new.id ? payload.new as Transaction : t
-            ));
-          }
-        }
-      )
-      .subscribe();
+    // Poll for updates every 30 seconds (replace real-time subscription)
+    const interval = setInterval(loadTransactions, 30000);
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, [user?.merchantProfile?.id]);
 

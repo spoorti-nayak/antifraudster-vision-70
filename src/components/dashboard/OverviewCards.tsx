@@ -9,7 +9,7 @@ import {
   AlertTriangle 
 } from "lucide-react";
 import { useVendor } from "@/contexts/VendorContext";
-import { supabase } from "@/integrations/supabase/client";
+import { apiService } from "@/services/api";
 import { useAuth } from "@/hooks/useAuth";
 
 interface MetricCardProps {
@@ -61,32 +61,14 @@ const OverviewCards = () => {
     avgFraudProbability: 0
   });
 
-  // Load real metrics from database
+  // Load real metrics from API
   useEffect(() => {
     const loadMetrics = async () => {
       if (!user?.merchantProfile?.id) return;
 
       try {
-        const { data: transactions, error } = await supabase
-          .from('transactions')
-          .select('fraud_score, status')
-          .eq('merchant_id', user.merchantProfile.id);
-
-        if (error) throw error;
-
-        const total = transactions?.length || 0;
-        const fraudulent = transactions?.filter(t => t.status === 'flagged').length || 0;
-        const safe = transactions?.filter(t => t.status === 'approved').length || 0;
-        const avgScore = transactions?.length 
-          ? transactions.reduce((sum, t) => sum + (t.fraud_score || 0), 0) / transactions.length 
-          : 0;
-
-        setMetrics({
-          totalTransactions: total,
-          fraudDetected: fraudulent,
-          safeTransactions: safe,
-          avgFraudProbability: avgScore
-        });
+        const data = await apiService.getRealtimeMetrics();
+        setMetrics(data);
       } catch (error) {
         console.error('Error loading metrics:', error);
       }
@@ -94,28 +76,12 @@ const OverviewCards = () => {
 
     loadMetrics();
 
-    // Subscribe to real-time updates
-    if (user?.merchantProfile?.id) {
-      const channel = supabase
-        .channel('transactions-changes')
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'transactions',
-            filter: `merchant_id=eq.${user.merchantProfile.id}`
-          },
-          () => {
-            loadMetrics();
-          }
-        )
-        .subscribe();
+    // Poll for updates every 30 seconds (replace real-time subscription)
+    const interval = setInterval(loadMetrics, 30000);
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
+    return () => {
+      clearInterval(interval);
+    };
   }, [user?.merchantProfile?.id]);
 
   const fraudRate = metrics.totalTransactions > 0 ? ((metrics.fraudDetected / metrics.totalTransactions) * 100).toFixed(2) : "0.00";
