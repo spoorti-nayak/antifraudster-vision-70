@@ -13,7 +13,7 @@ import {
   MapPin,
   CreditCard
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiService } from "@/services/api";
 import { useAuth } from "@/hooks/useAuth";
 
 interface FraudAlert {
@@ -128,58 +128,31 @@ const FraudAlertsPanel = () => {
 
     // Load alerts
     const loadAlerts = async () => {
-      const { data, error } = await supabase
-        .from('fraud_alerts')
-        .select('*')
-        .eq('merchant_id', user.merchantProfile.id)
-        .eq('is_resolved', false)
-        .order('created_at', { ascending: false })
-        .limit(10);
-
-      if (error) {
+      try {
+        const response = await apiService.getFraudAlerts({ limit: 10, status: 'active' });
+        setAlerts(response.alerts || []);
+      } catch (error) {
         console.error('Error loading alerts:', error);
-        return;
       }
-
-      setAlerts(data || []);
     };
 
     loadAlerts();
 
-    // Subscribe to real-time updates
-    const channel = supabase
-      .channel('fraud-alerts')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'fraud_alerts',
-          filter: `merchant_id=eq.${user.merchantProfile.id}`
-        },
-        (payload) => {
-          setAlerts(prev => [payload.new as FraudAlert, ...prev].slice(0, 10));
-        }
-      )
-      .subscribe();
+    // Poll for updates every 30 seconds
+    const interval = setInterval(loadAlerts, 30000);
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, [user?.merchantProfile?.id]);
 
   const handleResolve = async (alertId: string) => {
-    const { error } = await supabase
-      .from('fraud_alerts')
-      .update({ is_resolved: true, resolved_at: new Date().toISOString() })
-      .eq('id', alertId);
-
-    if (error) {
+    try {
+      await apiService.updateAlertStatus(alertId, 'resolved');
+      setAlerts(prev => prev.filter(a => a.id !== alertId));
+    } catch (error) {
       console.error('Error resolving alert:', error);
-      return;
     }
-
-    setAlerts(prev => prev.filter(a => a.id !== alertId));
   };
 
   const handleView = (alert: FraudAlert) => {

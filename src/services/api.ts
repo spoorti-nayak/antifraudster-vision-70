@@ -227,6 +227,54 @@ class ApiService {
       body: JSON.stringify({ status }),
     });
   }
+
+  // Products
+  async getProducts(params?: {
+    page?: number;
+    limit?: number;
+  }) {
+    const queryString = params 
+      ? '?' + new URLSearchParams(params as any).toString()
+      : '';
+    
+    return this.request<{
+      products: any[];
+      total: number;
+    }>(`/products${queryString}`);
+  }
+
+  async getProduct(id: string) {
+    return this.request<any>(`/products/${id}`);
+  }
+
+  async updateProduct(id: string, data: any) {
+    return this.request<any>(`/products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Real-time metrics
+  async getRealtimeMetrics() {
+    return this.request<{
+      totalTransactions: number;
+      fraudDetected: number;
+      safeTransactions: number;
+      avgFraudProbability: number;
+    }>('/metrics/realtime');
+  }
+
+  // Transaction stream
+  async getTransactionStream(limit?: number) {
+    const queryString = limit ? `?limit=${limit}` : '';
+    return this.request<any[]>(`/transactions/stream${queryString}`);
+  }
+
+  // Chart data
+  async getChartData(type: 'fraud-trend' | 'risk-distribution' | 'transaction-volume', period?: string) {
+    const queryString = period ? `?period=${period}` : '';
+    return this.request<any>(`/analytics/charts/${type}${queryString}`);
+  }
 }
 
 export const apiService = new ApiService();

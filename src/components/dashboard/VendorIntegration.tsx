@@ -14,7 +14,7 @@ import {
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiService } from "@/services/api";
 
 const VendorIntegration = () => {
   const { user, refreshAuth } = useAuth();
@@ -48,30 +48,20 @@ const VendorIntegration = () => {
       return;
     }
 
-    // Generate 64-character secure API key
-    const randomBytes = new Uint8Array(32);
-    crypto.getRandomValues(randomBytes);
-    const newKey = `af_live_${Array.from(randomBytes, byte => byte.toString(16).padStart(2, '0')).join('')}`;
-    
-    const { error } = await supabase
-      .from('merchants')
-      .update({ api_key: newKey })
-      .eq('user_id', user.id);
-
-    if (error) {
+    try {
+      const response = await apiService.generateApiKey();
+      setApiKey(response.api_key);
+      await refreshAuth();
+      
+      // Update connection status if website is already configured
+      if (websiteUrl && websiteUrl.trim() !== '') {
+        setIsConnected(true);
+      }
+      toast.success("API key generated successfully! Keep it secure.");
+    } catch (error) {
       console.error('Error generating API key:', error);
       toast.error("Failed to generate API key");
-      return;
     }
-
-    setApiKey(newKey);
-    await refreshAuth();
-    
-    // Update connection status if website is already configured
-    if (websiteUrl && websiteUrl.trim() !== '') {
-      setIsConnected(true);
-    }
-    toast.success("API key generated successfully! Keep it secure.");
   };
 
   const copyToClipboard = (text: string) => {
@@ -99,15 +89,10 @@ const VendorIntegration = () => {
     }
 
     try {
-      const { error } = await supabase
-        .from('merchants')
-        .update({ 
-          domain: websiteUrl,
-          is_active: true 
-        })
-        .eq('user_id', user.id);
-
-      if (error) throw error;
+      await apiService.updateIntegration({
+        website_url: websiteUrl,
+        api_key: apiKey,
+      });
 
       // Refresh auth context to update the parent page
       await refreshAuth();
@@ -132,15 +117,9 @@ const VendorIntegration = () => {
     }
 
     try {
-      const { error } = await supabase
-        .from('merchants')
-        .update({ 
-          domain: '',
-          is_active: false 
-        })
-        .eq('user_id', user.id);
-
-      if (error) throw error;
+      await apiService.updateIntegration({
+        website_url: '',
+      });
 
       setWebsiteUrl('');
       setIsConnected(false);

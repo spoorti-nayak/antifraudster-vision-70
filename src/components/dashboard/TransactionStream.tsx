@@ -10,7 +10,7 @@ import {
   CheckCircle,
   Clock
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiService } from "@/services/api";
 import { useAuth } from "@/hooks/useAuth";
 
 interface Transaction {
@@ -96,48 +96,21 @@ const TransactionStream = () => {
 
     // Load initial transactions
     const loadTransactions = async () => {
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('merchant_id', user.merchantProfile.id)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (error) {
+      try {
+        const data = await apiService.getTransactionStream(20);
+        setTransactions(data || []);
+      } catch (error) {
         console.error('Error loading transactions:', error);
-        return;
       }
-
-      setTransactions(data || []);
     };
 
     loadTransactions();
 
-    // Subscribe to real-time updates
-    const channel = supabase
-      .channel('transaction-stream')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'transactions',
-          filter: `merchant_id=eq.${user.merchantProfile.id}`
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            setTransactions(prev => [payload.new as Transaction, ...prev].slice(0, 20));
-          } else if (payload.eventType === 'UPDATE') {
-            setTransactions(prev => 
-              prev.map(t => t.id === payload.new.id ? payload.new as Transaction : t)
-            );
-          }
-        }
-      )
-      .subscribe();
+    // Poll for updates every 10 seconds
+    const interval = setInterval(loadTransactions, 10000);
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, [user?.merchantProfile?.id]);
 
