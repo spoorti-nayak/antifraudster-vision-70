@@ -18,38 +18,89 @@ import {
   ResponsiveContainer 
 } from "recharts";
 import { TrendingUp, PieChart as PieChartIcon, BarChart3 } from "lucide-react";
-import { apiService } from "@/services/api";
+import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
-// Fetch real transaction data from API
-const fetchRealSeriesData = async (range: '24h' | '7d' | '30d') => {
-  try {
-    const data = await apiService.getChartData('transaction-volume', range);
-    return data || [];
-  } catch (error) {
-    console.error('Error fetching series data:', error);
-    return [];
-  }
+// Fetch real transaction data from database
+const fetchRealSeriesData = async (merchantId: string, range: '24h' | '7d' | '30d') => {
+  const now = new Date();
+  const startTime = new Date(
+    range === '24h' ? now.getTime() - 24 * 60 * 60 * 1000 :
+    range === '7d' ? now.getTime() - 7 * 24 * 60 * 60 * 1000 :
+    now.getTime() - 30 * 24 * 60 * 60 * 1000
+  );
+
+  const { data } = await supabase
+    .from('transactions')
+    .select('created_at, status, fraud_score')
+    .eq('merchant_id', merchantId)
+    .gte('created_at', startTime.toISOString());
+
+  if (!data || data.length === 0) return [];
+
+  // Group transactions by time buckets
+  const buckets = new Map();
+  data.forEach(tx => {
+    const date = new Date(tx.created_at);
+    const key = range === '24h' 
+      ? date.toLocaleTimeString([], { hour: '2-digit' })
+      : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    
+    if (!buckets.has(key)) {
+      buckets.set(key, { fraudDetected: 0, safeTransactions: 0 });
+    }
+    
+    const bucket = buckets.get(key);
+    if (tx.status === 'blocked' || tx.status === 'flagged') {
+      bucket.fraudDetected++;
+    } else {
+      bucket.safeTransactions++;
+    }
+  });
+
+  return Array.from(buckets.entries()).map(([time, counts]) => ({
+    time,
+    fraudDetected: counts.fraudDetected,
+    safeTransactions: counts.safeTransactions,
+    totalTransactions: counts.fraudDetected + counts.safeTransactions,
+  }));
 };
 
-const fetchRealThresholdData = async (range: '24h' | '7d' | '30d') => {
-  try {
-    const data = await apiService.getChartData('fraud-trend', range);
-    return data || [];
-  } catch (error) {
-    console.error('Error fetching threshold data:', error);
-    return [];
-  }
-};
+const fetchRealThresholdData = async (merchantId: string, range: '24h' | '7d' | '30d') => {
+  const now = new Date();
+  const startTime = new Date(
+    range === '24h' ? now.getTime() - 24 * 60 * 60 * 1000 :
+    range === '7d' ? now.getTime() - 7 * 24 * 60 * 60 * 1000 :
+    now.getTime() - 30 * 24 * 60 * 60 * 1000
+  );
 
-const fetchRealDistributionData = async () => {
-  try {
-    const data = await apiService.getChartData('risk-distribution');
-    return data || [];
-  } catch (error) {
-    console.error('Error fetching distribution data:', error);
-    return [];
-  }
+  const { data } = await supabase
+    .from('transactions')
+    .select('created_at, fraud_score')
+    .eq('merchant_id', merchantId)
+    .gte('created_at', startTime.toISOString());
+
+  if (!data || data.length === 0) return [];
+
+  const buckets = new Map();
+  data.forEach(tx => {
+    const date = new Date(tx.created_at);
+    const key = range === '24h' 
+      ? date.toLocaleTimeString([], { hour: '2-digit' })
+      : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    
+    if (!buckets.has(key)) {
+      buckets.set(key, { scores: [] });
+    }
+    buckets.get(key).scores.push(tx.fraud_score || 0);
+  });
+
+  return Array.from(buckets.entries()).map(([time, data]) => ({
+    time,
+    avgRiskScore: data.scores.reduce((a: number, b: number) => a + b, 0) / data.scores.length,
+    adaptiveThreshold: 70,
+    staticThreshold: 75,
+  }));
 };
 
 const COLORS = {
@@ -76,8 +127,8 @@ const FraudCharts = ({
     if (!user?.merchantProfile?.id) return;
 
     const loadData = async () => {
-      const series = await fetchRealSeriesData(dateRange);
-      const threshold = await fetchRealThresholdData(dateRange);
+      const series = await fetchRealSeriesData(user.merchantProfile.id, dateRange);
+      const threshold = await fetchRealThresholdData(user.merchantProfile.id, dateRange);
       setSeriesData(series);
       setThresholdData(threshold);
     };

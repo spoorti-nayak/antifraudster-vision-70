@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiService } from '@/services/api';
+import { supabase } from '@/integrations/supabase/client';
+import { User as SupabaseUser } from '@supabase/supabase-js';
 
 interface MerchantProfile {
   id: string;
@@ -59,10 +60,20 @@ export const useAuthProvider = (): AuthContextType => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const loadMerchantProfile = async () => {
+  const loadMerchantProfile = async (userId: string, email: string) => {
     try {
-      const profile = await apiService.getVendorProfile();
-      return profile as MerchantProfile;
+      const { data: profileData, error: profileError } = await (supabase as any)
+        .from('merchant_profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (profileError) {
+        console.error('Error loading merchant profile:', profileError);
+        return null;
+      }
+
+      return profileData as MerchantProfile;
     } catch (error) {
       console.error('Error in loadMerchantProfile:', error);
       return null;
@@ -72,19 +83,17 @@ export const useAuthProvider = (): AuthContextType => {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const token = localStorage.getItem('auth_token');
-        const userStr = localStorage.getItem('user');
+        const { data: { session } } = await supabase.auth.getSession();
         
-        if (token && userStr) {
-          const userData = JSON.parse(userStr);
-          const merchantProfile = await loadMerchantProfile();
+        if (session?.user) {
+          const merchantProfile = await loadMerchantProfile(session.user.id, session.user.email!);
           
           setUser({
-            id: userData.id,
-            email: userData.email,
-            firstName: merchantProfile?.first_name || userData.first_name || '',
-            lastName: merchantProfile?.last_name || userData.last_name || '',
-            company: merchantProfile?.company_name || userData.company || '',
+            id: session.user.id,
+            email: session.user.email!,
+            firstName: merchantProfile?.first_name || '',
+            lastName: merchantProfile?.last_name || '',
+            company: merchantProfile?.company_name || '',
             merchantProfile: merchantProfile || undefined,
           });
         }
@@ -96,28 +105,60 @@ export const useAuthProvider = (): AuthContextType => {
     };
 
     initAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        const merchantProfile = await loadMerchantProfile(session.user.id, session.user.email!);
+        
+        setUser({
+          id: session.user.id,
+          email: session.user.email!,
+          firstName: merchantProfile?.first_name || '',
+          lastName: merchantProfile?.last_name || '',
+          company: merchantProfile?.company_name || '',
+          merchantProfile: merchantProfile || undefined,
+        });
+        setIsLoading(false);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setIsLoading(false);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const login = async (email: string, password: string) => {
     try {
       setIsLoading(true);
-      const response = await apiService.login(email, password);
-
-      const merchantProfile = await loadMerchantProfile();
-      
-      setUser({
-        id: response.user.id,
-        email: response.user.email,
-        firstName: merchantProfile?.first_name || response.user.first_name || '',
-        lastName: merchantProfile?.last_name || response.user.last_name || '',
-        company: merchantProfile?.company_name || response.user.company || '',
-        merchantProfile: merchantProfile || undefined,
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
-      navigate('/dashboard');
+      if (error) {
+        throw new Error(error.message || 'Login failed. Please check your credentials.');
+      }
+
+      if (data.user) {
+        const merchantProfile = await loadMerchantProfile(data.user.id, data.user.email!);
+        
+        setUser({
+          id: data.user.id,
+          email: data.user.email!,
+          firstName: merchantProfile?.first_name || '',
+          lastName: merchantProfile?.last_name || '',
+          company: merchantProfile?.company_name || '',
+          merchantProfile: merchantProfile || undefined,
+        });
+
+        navigate('/dashboard');
+      }
     } catch (error: any) {
       console.error('Login error:', error);
-      const errorMessage = error?.message || 'Login failed. Please check your credentials.';
+      const errorMessage = error?.message || error?.error_description || 'Login failed. The authentication service is temporarily unavailable. Please try again.';
       throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
@@ -127,23 +168,45 @@ export const useAuthProvider = (): AuthContextType => {
   const register = async (userData: RegisterData) => {
     try {
       setIsLoading(true);
-      const response = await apiService.register(userData);
-
-      const merchantProfile = await loadMerchantProfile();
-      
-      setUser({
-        id: response.user.id,
-        email: response.user.email,
-        firstName: merchantProfile?.first_name || userData.firstName,
-        lastName: merchantProfile?.last_name || userData.lastName,
-        company: merchantProfile?.company_name || userData.company,
-        merchantProfile: merchantProfile || undefined,
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: userData.email,
+        password: userData.password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/dashboard`,
+          data: {
+            first_name: userData.firstName,
+            last_name: userData.lastName,
+          }
+        }
       });
 
-      navigate('/dashboard');
+      if (authError) {
+        throw new Error(authError.message || 'Registration failed. Please try again.');
+      }
+
+      if (authData.user) {
+        const { error: profileError } = await (supabase as any)
+          .from('merchant_profiles')
+          .insert({
+            user_id: authData.user.id,
+            first_name: userData.firstName,
+            last_name: userData.lastName,
+            company_name: userData.company,
+            email: userData.email,
+            api_key: `sk_live_${crypto.randomUUID().replace(/-/g, '')}`,
+          });
+
+        if (profileError) {
+          console.error('Profile creation error:', profileError);
+          throw new Error('Failed to create merchant profile. Please contact support.');
+        }
+
+        // Auto-confirm is enabled, so navigate to dashboard
+        navigate('/dashboard');
+      }
     } catch (error: any) {
       console.error('Registration error:', error);
-      const errorMessage = error?.message || 'Registration failed. Please try again.';
+      const errorMessage = error?.message || error?.error_description || 'Registration failed. The authentication service is temporarily unavailable. Please try again in a few moments.';
       throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
@@ -152,7 +215,7 @@ export const useAuthProvider = (): AuthContextType => {
 
   const logout = async () => {
     try {
-      await apiService.logout();
+      await supabase.auth.signOut();
       setUser(null);
       navigate('/login');
     } catch (error) {
@@ -163,18 +226,17 @@ export const useAuthProvider = (): AuthContextType => {
 
   const refreshAuth = async () => {
     try {
-      await apiService.refreshToken();
-      const merchantProfile = await loadMerchantProfile();
-      const userStr = localStorage.getItem('user');
+      const { data: { session } } = await supabase.auth.getSession();
       
-      if (userStr) {
-        const userData = JSON.parse(userStr);
+      if (session?.user) {
+        const merchantProfile = await loadMerchantProfile(session.user.id, session.user.email!);
+        
         setUser({
-          id: userData.id,
-          email: userData.email,
-          firstName: merchantProfile?.first_name || userData.first_name || '',
-          lastName: merchantProfile?.last_name || userData.last_name || '',
-          company: merchantProfile?.company_name || userData.company || '',
+          id: session.user.id,
+          email: session.user.email!,
+          firstName: merchantProfile?.first_name || '',
+          lastName: merchantProfile?.last_name || '',
+          company: merchantProfile?.company_name || '',
           merchantProfile: merchantProfile || undefined,
         });
       }
@@ -185,12 +247,11 @@ export const useAuthProvider = (): AuthContextType => {
 
   const resetPassword = async (email: string) => {
     try {
-      // Implement password reset via API
-      await fetch('https://api.antifraudster.com/v1/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
       });
+
+      if (error) throw error;
     } catch (error) {
       console.error('Password reset error:', error);
       throw error;

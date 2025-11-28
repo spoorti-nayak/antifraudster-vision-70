@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Globe, Bell } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { apiService } from "@/services/api";
+import { supabase } from "@/integrations/supabase/client";
 
 const VendorSettings = () => {
   const { user } = useAuth();
@@ -42,15 +42,16 @@ const VendorSettings = () => {
         }
       }
 
-      // Save webhook URL and notification email via API
-      await apiService.updateIntegration({
-        website_url: user.merchantProfile.domain || '',
-        webhook_url: webhookUrl || undefined,
-      });
+      // Save webhook URL and notification email to merchant profile
+      const { error } = await supabase
+        .from('merchants')
+        .update({ 
+          email: notificationEmail,
+          webhook_url: webhookUrl || null
+        })
+        .eq('id', user.merchantProfile.id);
 
-      await apiService.updateVendorProfile({
-        email: notificationEmail,
-      });
+      if (error) throw error;
 
       // Save local preferences
       localStorage.setItem('af_auto_block', autoBlock.toString());
