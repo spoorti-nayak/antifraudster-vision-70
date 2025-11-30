@@ -10,6 +10,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useSimulation } from "@/contexts/SimulationContext";
 
 interface FraudAlert {
   id: string;
@@ -28,67 +29,78 @@ const FraudAlerts = () => {
   const { isConnected } = useVendor();
   const { user } = useAuth();
   const { toast } = useToast();
-  const [alerts, setAlerts] = useState<FraudAlert[]>([]);
+  const { alerts: simulatedAlerts } = useSimulation();
+  const [alerts, setAlerts] = useState<FraudAlert[]>(simulatedAlerts as FraudAlert[]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (isConnected && user?.merchantProfile?.id) {
-      fetchAlerts();
-      
-      // Subscribe to real-time alerts
-      const channel = supabase
-        .channel('fraud_alerts_changes')
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'fraud_alerts',
-            filter: `merchant_id=eq.${user.merchantProfile.id}`
-          },
-          (payload) => {
-            setAlerts(prev => [payload.new as FraudAlert, ...prev]);
-            toast({
-              title: "New Fraud Alert",
-              description: (payload.new as FraudAlert).message,
-              variant: "destructive"
-            });
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    } else {
+    // If we have no backend connection or merchant, just use simulated alerts
+    if (!isConnected || !user?.merchantProfile?.id) {
+      setAlerts(simulatedAlerts as FraudAlert[]);
       setLoading(false);
+      return;
     }
-  }, [isConnected, user?.merchantProfile?.id]);
 
-  const fetchAlerts = async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('fraud_alerts')
-        .select('*')
-        .eq('merchant_id', user?.merchantProfile?.id)
-        .eq('is_resolved', false)
-        .order('created_at', { ascending: false })
-        .limit(50);
+    const fetchAlerts = async () => {
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('fraud_alerts')
+          .select('*')
+          .eq('merchant_id', user.merchantProfile.id)
+          .eq('is_resolved', false)
+          .order('created_at', { ascending: false })
+          .limit(50);
 
-      if (error) throw error;
-      setAlerts(data || []);
-    } catch (error) {
-      console.error('Error fetching alerts:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch fraud alerts",
-        variant: "destructive"
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+        if (error) {
+          console.warn('Error fetching backend alerts, falling back to simulated alerts:', error);
+          setAlerts(simulatedAlerts as FraudAlert[]);
+          return;
+        }
+
+        // Merge backend alerts with simulated alerts (simulated first)
+        setAlerts([...(simulatedAlerts as FraudAlert[]), ...(data || [])]);
+      } catch (error) {
+        console.error('Error fetching alerts:', error);
+        setAlerts(simulatedAlerts as FraudAlert[]);
+        toast({
+          title: "Error",
+          description: "Failed to fetch fraud alerts from backend, showing simulated alerts instead.",
+          variant: "destructive"
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAlerts();
+
+    // Subscribe to real-time backend alerts
+    const channel = supabase
+      .channel('fraud_alerts_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'fraud_alerts',
+          filter: `merchant_id=eq.${user.merchantProfile.id}`
+        },
+        (payload) => {
+          setAlerts(prev => [payload.new as FraudAlert, ...prev]);
+          toast({
+            title: "New Fraud Alert",
+            description: (payload.new as FraudAlert).message,
+            variant: "destructive"
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isConnected, user?.merchantProfile?.id, simulatedAlerts, toast]);
 
   const handleResolveAlert = async (alertId: string) => {
     try {
