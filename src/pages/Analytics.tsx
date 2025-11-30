@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { TrendingUp, Download, Calendar, BarChart3, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,47 +8,28 @@ import AnalyticsCharts from "@/components/dashboard/AnalyticsCharts";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useVendor } from "@/contexts/VendorContext";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
+import { useSimulation } from "@/contexts/SimulationContext";
 import { Link } from "react-router-dom";
 
 const Analytics = () => {
   const [dateRange, setDateRange] = useState<'24h' | '7d' | '30d'>('7d');
   const { user } = useAuth();
   const { isConnected } = useVendor();
-  const [stats, setStats] = useState({ total: 0, fraudDetected: 0, avgScore: 0 });
+  const { transactions: simulatedTransactions } = useSimulation();
 
-  useEffect(() => {
-    if (!user?.merchantProfile?.id) return;
-
-    const fetchStats = async () => {
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('status, fraud_score')
-        .eq('merchant_id', user.merchantProfile.id);
-
-      if (error || !data) {
-        console.warn('Backend unavailable, using demo stats:', error);
-        // Fallback to mock stats for demo
-        setStats({ 
-          total: 47, 
-          fraudDetected: 8, 
-          avgScore: 18.5 
-        });
-        return;
+  const stats = simulatedTransactions.length
+    ? {
+        total: simulatedTransactions.length,
+        fraudDetected: simulatedTransactions.filter(
+          (t) => t.status === 'blocked' || t.status === 'flagged'
+        ).length,
+        avgScore:
+          simulatedTransactions.reduce((sum, t) => sum + (t.fraud_score || 0), 0) /
+          simulatedTransactions.length,
       }
-
-      const total = data.length;
-      const fraudDetected = data.filter(t => t.status === 'blocked' || t.status === 'flagged').length;
-      const avgScore = total > 0 ? data.reduce((sum, t) => sum + (t.fraud_score || 0), 0) / total : 0;
-      
-      setStats({ total, fraudDetected, avgScore });
-    };
-
-    fetchStats();
-  }, [user?.merchantProfile?.id]);
+    : { total: 0, fraudDetected: 0, avgScore: 0 };
 
   const hasData = stats.total > 0;
-
   const analyticsCards = [
     {
       title: "Detection Rate",
