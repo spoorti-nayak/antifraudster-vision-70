@@ -151,14 +151,52 @@ export default function Checkout() {
 
       console.log('Fraud analysis result:', fraudResult);
 
+      const fraudScore = fraudResult?.fraud_score || 0;
+      const status = fraudResult?.status || 'approved';
+
+      // Create transaction record in dashboard
+      const { data: transaction } = await supabase
+        .from('transactions')
+        .insert({
+          merchant_id: user.merchantProfile.id,
+          customer_email: data.email,
+          amount: totalPrice,
+          currency: 'USD',
+          status: status,
+          fraud_score: fraudScore,
+          payment_method: 'credit_card',
+          customer_ip: '0.0.0.0',
+          metadata: { 
+            order_id: order.id,
+            card_last4: data.cardNumber.slice(-4),
+            from_checkout: true
+          }
+        })
+        .select()
+        .single();
+
       // Check fraud result status
-      if (fraudResult?.status === 'blocked') {
+      if (status === 'blocked') {
+        // Create fraud alert
+        if (transaction) {
+          await supabase
+            .from('fraud_alerts')
+            .insert({
+              merchant_id: user.merchantProfile.id,
+              transaction_id: transaction.id,
+              alert_type: 'payment_blocked',
+              severity: 'high',
+              message: 'Checkout payment blocked due to fraud detection',
+              details: fraudResult
+            });
+        }
+
         // Update order status to blocked
         await (supabase as any)
           .from('orders')
           .update({ 
             status: 'blocked', 
-            fraud_score: fraudResult.fraud_score / 100 
+            fraud_score: fraudScore / 100 
           })
           .eq('id', order.id);
 
@@ -167,7 +205,7 @@ export default function Checkout() {
                           'Transaction blocked due to suspicious activity';
 
         toast.error(
-          `⛔ Payment Blocked - Fraud Detected!\n\nFraud Score: ${fraudResult.fraud_score}%\n\n${explanation}`,
+          `⛔ Payment Blocked - Fraud Detected!\n\nFraud Score: ${fraudScore}%\n\n${explanation}`,
           { duration: 10000 }
         );
         
@@ -175,12 +213,26 @@ export default function Checkout() {
         return;
       }
 
+      // Create alert for flagged transactions
+      if (status === 'flagged' && transaction) {
+        await supabase
+          .from('fraud_alerts')
+          .insert({
+            merchant_id: user.merchantProfile.id,
+            transaction_id: transaction.id,
+            alert_type: 'suspicious_activity',
+            severity: 'medium',
+            message: 'Checkout payment flagged for review',
+            details: fraudResult
+          });
+      }
+
       // Update order status to completed (approved or flagged but allowed)
       await (supabase as any)
         .from('orders')
         .update({ 
-          status: fraudResult?.status === 'flagged' ? 'flagged' : 'completed',
-          fraud_score: fraudResult?.fraud_score ? fraudResult.fraud_score / 100 : 0
+          status: status === 'flagged' ? 'flagged' : 'completed',
+          fraud_score: fraudScore / 100
         })
         .eq('id', order.id);
 

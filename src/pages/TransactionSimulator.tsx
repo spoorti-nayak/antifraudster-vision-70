@@ -167,7 +167,7 @@ export default function TransactionSimulator() {
       return;
     }
 
-    // For the demo, generate a local mock result instead of calling the backend
+    // For the demo, generate a local mock result AND write to database
     if (USE_LOCAL_SIMULATION) {
       const scenario = scenarios.find((s) => s.id === scenarioId);
       const isFraud = scenario?.type === 'fraud';
@@ -175,8 +175,48 @@ export default function TransactionSimulator() {
       const variance = isFraud ? 0.2 : 0.15;
       const fraudScore = Math.min(1, Math.max(0, baseScore + (Math.random() - 0.5) * variance));
 
+      // Write transaction to database
+      const { data: transaction, error: txError } = await supabase
+        .from('transactions')
+        .insert({
+          merchant_id: user.merchantProfile.id,
+          customer_email: `customer_${Math.random().toString(36).substr(2, 9)}@example.com`,
+          amount: Math.floor(Math.random() * 5000) + 100,
+          currency: 'INR',
+          status: isFraud ? 'blocked' : 'approved',
+          fraud_score: fraudScore * 100,
+          payment_method: 'credit_card',
+          customer_ip: '192.168.1.' + Math.floor(Math.random() * 255),
+          metadata: { scenario: scenarioId, simulated: true }
+        })
+        .select()
+        .single();
+
+      if (txError) {
+        console.error('Error creating transaction:', txError);
+        toast.error('Failed to create transaction');
+        return;
+      }
+
+      // If fraud detected, create alert
+      if (isFraud && transaction) {
+        await supabase
+          .from('fraud_alerts')
+          .insert({
+            merchant_id: user.merchantProfile.id,
+            transaction_id: transaction.id,
+            alert_type: 'high_risk_transaction',
+            severity: fraudScore > 0.8 ? 'high' : 'medium',
+            message: `Fraudulent transaction detected: ${scenarioId}`,
+            details: {
+              scenario: scenarioId,
+              risk_factors: ['High-risk velocity pattern', 'Suspicious IP', 'Unusual behavior']
+            }
+          });
+      }
+
       const mockResult: SimulationResult = {
-        transaction_id: crypto.randomUUID(),
+        transaction_id: transaction?.id || crypto.randomUUID(),
         type: scenarioId,
         is_fraud: !!isFraud,
         fraud_score: fraudScore,
