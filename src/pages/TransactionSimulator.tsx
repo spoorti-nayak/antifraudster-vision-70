@@ -173,7 +173,25 @@ export default function TransactionSimulator() {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Edge function error:', error);
+        const errorMessage = error.message || 'Unknown error';
+        
+        if (errorMessage.includes('503') || errorMessage.includes('FetchError')) {
+          toast.error('Backend service unavailable', {
+            description: 'Check if your Supabase instance is running and accessible',
+            duration: 5000,
+          });
+        } else if (errorMessage.includes('fetch')) {
+          toast.error('Connection failed', {
+            description: 'Verify your VITE_SUPABASE_URL in .env file',
+            duration: 5000,
+          });
+        } else {
+          toast.error(`Simulation failed: ${errorMessage}`);
+        }
+        throw error;
+      }
 
       setResults(prev => [data, ...prev]);
       
@@ -189,7 +207,6 @@ export default function TransactionSimulator() {
       return data;
     } catch (error) {
       console.error('Simulation error:', error);
-      toast.error('Failed to simulate transaction');
       throw error;
     }
   };
