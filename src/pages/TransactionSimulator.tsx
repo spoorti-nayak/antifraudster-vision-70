@@ -167,13 +167,102 @@ export default function TransactionSimulator() {
       return;
     }
 
-    // For the demo, generate a local mock result AND write to database
+    // For the demo, generate a sophisticated mock result AND write to database
     if (USE_LOCAL_SIMULATION) {
       const scenario = scenarios.find((s) => s.id === scenarioId);
       const isFraud = scenario?.type === 'fraud';
-      const baseScore = isFraud ? 0.75 : 0.05;
-      const variance = isFraud ? 0.2 : 0.15;
-      const fraudScore = Math.min(1, Math.max(0, baseScore + (Math.random() - 0.5) * variance));
+      
+      // Advanced fraud scoring with ML-style patterns
+      const getAdvancedFraudScore = (scenarioType: string, isFraudulent: boolean) => {
+        if (!isFraudulent) {
+          return Math.random() * 0.15; // 0-15% for safe transactions
+        }
+        
+        // Different fraud patterns have different score ranges
+        const scoreRanges: Record<string, { min: number, max: number }> = {
+          'stolen-card': { min: 0.85, max: 0.98 },
+          'account-takeover': { min: 0.75, max: 0.92 },
+          'velocity-abuse': { min: 0.70, max: 0.88 },
+          'test-card': { min: 0.65, max: 0.85 },
+          'suspicious-location': { min: 0.60, max: 0.80 },
+        };
+        
+        const range = scoreRanges[scenarioType] || { min: 0.70, max: 0.90 };
+        return range.min + Math.random() * (range.max - range.min);
+      };
+
+      const fraudScore = getAdvancedFraudScore(scenarioId, isFraud);
+
+      // Generate realistic risk factors based on scenario
+      const getRiskFactors = (scenarioType: string, isFraudulent: boolean) => {
+        if (!isFraudulent) {
+          return [
+            'Customer behavior matches 6-month historical pattern (98.3% confidence)',
+            'IP geolocation consistent with billing address',
+            'Device fingerprint recognized from previous successful transactions',
+            'Transaction velocity within normal range (3.2 std deviations)'
+          ];
+        }
+
+        const fraudPatterns: Record<string, string[]> = {
+          'stolen-card': [
+            'Card-not-present transaction with mismatched AVS (Address Verification)',
+            'Unusual purchase pattern: 387% deviation from cardholder history',
+            'High-risk merchant category mismatch',
+            'Multiple failed authorization attempts detected (4 in 10 minutes)',
+            'Geolocation anomaly: 2,400km from last transaction 15 minutes ago'
+          ],
+          'account-takeover': [
+            'Login from new device with different browser fingerprint',
+            'Password changed 23 minutes before transaction',
+            'Email/phone verification bypassed using expired session token',
+            'Shipping address changed to high-risk international location',
+            'Purchase behavior inconsistent with 12-month user profile'
+          ],
+          'velocity-abuse': [
+            'Transaction velocity spike: 14 transactions in 8 minutes',
+            'Multiple cards attempted from same device (6 unique PANs)',
+            'Distributed attack pattern detected across 3 IP addresses',
+            'Average order value 520% higher than account history',
+            'Session hijacking indicators present in request headers'
+          ],
+          'test-card': [
+            'Sequential card number pattern detected (likely testing)',
+            'Multiple authorization attempts with incremental amounts',
+            'BIN (Bank Identification Number) associated with test cards',
+            'CVV pattern suggests automated testing (sequential values)',
+            'No previous transaction history for this card number'
+          ],
+          'suspicious-location': [
+            'IP geolocation from high-risk country (fraud rate: 34.2%)',
+            'VPN/proxy usage detected through anonymization service',
+            'Timezone mismatch between device and claimed location',
+            'Tor exit node identified in connection metadata',
+            'Location history inconsistent with cardholder profile'
+          ],
+        };
+
+        return fraudPatterns[scenarioType] || [
+          'Anomalous transaction pattern detected by ensemble ML models',
+          'Risk score exceeds merchant-defined threshold',
+          'Multiple fraud indicators present in transaction metadata'
+        ];
+      };
+
+      const riskFactors = getRiskFactors(scenarioId, isFraud);
+
+      // Generate ML-style explanation
+      const getMLExplanation = (scenarioType: string, score: number, isFraudulent: boolean) => {
+        if (!isFraudulent) {
+          return `Ensemble ML analysis (Random Forest: 0.${Math.floor(Math.random() * 10)}, XGBoost: 0.${Math.floor(Math.random() * 15)}, Neural Network: 0.${Math.floor(Math.random() * 12)}) shows transaction aligns with legitimate customer behavior patterns. All 47 fraud indicators returned negative. Transaction approved with high confidence.`;
+        }
+
+        const modelScores = `Random Forest: ${(score + 0.02).toFixed(2)}, XGBoost: ${(score - 0.03).toFixed(2)}, Neural Network: ${(score + 0.01).toFixed(2)}`;
+        
+        return `⚠️ ENSEMBLE MODEL CONSENSUS: ${(score * 100).toFixed(1)}% fraud probability detected. Multi-model analysis (${modelScores}) identified ${riskFactors.length} high-risk indicators. Transaction matches known fraud pattern "${scenarioType}" with 94.7% confidence. Recommended action: BLOCK transaction and flag for manual review.`;
+      };
+
+      const explanation = getMLExplanation(scenarioId, fraudScore, isFraud);
 
       // Write transaction to database
       const { data: transaction, error: txError } = await supabase
@@ -221,12 +310,8 @@ export default function TransactionSimulator() {
         is_fraud: !!isFraud,
         fraud_score: fraudScore,
         status: isFraud ? 'blocked' : 'approved',
-        explanation: isFraud
-          ? 'Ensemble ML models detected multiple high-risk signals consistent with this fraud scenario.'
-          : 'Transaction matches historical patterns for legitimate customers and shows low risk indicators.',
-        risk_factors: isFraud
-          ? ['High-risk velocity pattern', 'Suspicious IP or geolocation', 'Unusual purchase behavior']
-          : ['Trusted customer behavior', 'Normal purchase size', 'Consistent geolocation'],
+        explanation: explanation,
+        risk_factors: riskFactors.slice(0, 3), // Show top 3 factors
       };
 
       setResults((prev) => [mockResult, ...prev]);
