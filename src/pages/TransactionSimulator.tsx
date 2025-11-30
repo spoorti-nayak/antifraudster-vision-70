@@ -175,20 +175,35 @@ export default function TransactionSimulator() {
 
       if (error) {
         console.error('Edge function error:', error);
-        const errorMessage = error.message || 'Unknown error';
+        const anyError = error as any;
+        const backendError = anyError?.context?.error || anyError?.context?.message;
+        const errorMessage = backendError || error.message || 'Unknown error';
         
         if (errorMessage.includes('503') || errorMessage.includes('FetchError')) {
           toast.error('Backend service unavailable', {
             description: 'Check if your Supabase instance is running and accessible',
             duration: 5000,
           });
-        } else if (errorMessage.includes('fetch')) {
+        } else if (errorMessage.toLowerCase().includes('relation') && errorMessage.toLowerCase().includes('does not exist')) {
+          toast.error('Database schema missing', {
+            description: 'Run the provided MIGRATION.sql on your own Supabase project to create all tables.',
+            duration: 7000,
+          });
+        } else if (errorMessage.toLowerCase().includes('invalid merchant api key')) {
+          toast.error('Invalid merchant API key', {
+            description: 'Regenerate your API key in Store Settings and try again.',
+            duration: 7000,
+          });
+        } else if (errorMessage.toLowerCase().includes('fetch')) {
           toast.error('Connection failed', {
-            description: 'Verify your VITE_SUPABASE_URL in .env file',
+            description: 'Verify your SUPABASE_URL/SERVICE_ROLE_KEY secrets for Edge Functions.',
             duration: 5000,
           });
         } else {
-          toast.error(`Simulation failed: ${errorMessage}`);
+          toast.error('Simulation failed', {
+            description: errorMessage,
+            duration: 7000,
+          });
         }
         throw error;
       }
@@ -207,6 +222,11 @@ export default function TransactionSimulator() {
       return data;
     } catch (error) {
       console.error('Simulation error:', error);
+      if (error instanceof Error) {
+        toast.error('Failed to simulate transaction', {
+          description: error.message,
+        });
+      }
       throw error;
     }
   };
