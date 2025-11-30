@@ -85,11 +85,19 @@ const VendorIntegration = () => {
       return;
     }
 
-    // Validate URL format
+    // Validate URL format - accept localhost for development and production URLs
     try {
-      new URL(websiteUrl);
+      const url = new URL(websiteUrl);
+      // Accept localhost URLs (http://localhost:PORT) or standard production URLs
+      const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+      const isValidProduction = url.protocol === 'https:' || url.protocol === 'http:';
+      
+      if (!isLocalhost && !isValidProduction) {
+        toast.error("Please enter a valid URL (e.g., https://mystore.com or http://localhost:3000)");
+        return;
+      }
     } catch {
-      toast.error("Please enter a valid URL (e.g., https://mystore.com)");
+      toast.error("Please enter a valid URL (e.g., https://mystore.com or http://localhost:3000)");
       return;
     }
 
