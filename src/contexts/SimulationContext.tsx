@@ -35,15 +35,30 @@ interface SimulationContextType {
 const SimulationContext = createContext<SimulationContextType | undefined>(undefined);
 
 export const SimulationProvider = ({ children }: { children: ReactNode }) => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [alerts, setAlerts] = useState<FraudAlert[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    const saved = localStorage.getItem('simulated_transactions');
+    return saved ? JSON.parse(saved) : [];
+  });
+  
+  const [alerts, setAlerts] = useState<FraudAlert[]>(() => {
+    const saved = localStorage.getItem('simulated_alerts');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   const addTransaction = (transaction: Transaction) => {
-    setTransactions(prev => [transaction, ...prev]);
+    setTransactions(prev => {
+      const updated = [transaction, ...prev];
+      localStorage.setItem('simulated_transactions', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const addAlert = (alert: FraudAlert) => {
-    setAlerts(prev => [alert, ...prev]);
+    setAlerts(prev => {
+      const updated = [alert, ...prev];
+      localStorage.setItem('simulated_alerts', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   return (
