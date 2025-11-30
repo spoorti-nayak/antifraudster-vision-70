@@ -11,6 +11,7 @@ import {
 import { useVendor } from "@/contexts/VendorContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useSimulation } from "@/contexts/SimulationContext";
 
 interface MetricCardProps {
   title: string;
@@ -54,6 +55,7 @@ const MetricCard = ({ title, value, change, changeType, icon, gradient }: Metric
 const OverviewCards = () => {
   const { isConnected } = useVendor();
   const { user } = useAuth();
+  const { transactions: simulatedTransactions } = useSimulation();
   const [metrics, setMetrics] = useState({
     totalTransactions: 0,
     fraudDetected: 0,
@@ -61,35 +63,43 @@ const OverviewCards = () => {
     avgFraudProbability: 0
   });
 
-  // Load real metrics from database
+  // Load and merge metrics from database and simulation context
   useEffect(() => {
     const loadMetrics = async () => {
-      if (!user?.merchantProfile?.id) return;
+      let dbTransactions: any[] = [];
+      
+      // Try to load from database if user is authenticated
+      if (user?.merchantProfile?.id) {
+        try {
+          const { data, error } = await supabase
+            .from('transactions')
+            .select('fraud_score, status')
+            .eq('merchant_id', user.merchantProfile.id);
 
-      try {
-        const { data: transactions, error } = await supabase
-          .from('transactions')
-          .select('fraud_score, status')
-          .eq('merchant_id', user.merchantProfile.id);
-
-        if (error) throw error;
-
-        const total = transactions?.length || 0;
-        const fraudulent = transactions?.filter(t => t.status === 'flagged').length || 0;
-        const safe = transactions?.filter(t => t.status === 'approved').length || 0;
-        const avgScore = transactions?.length 
-          ? transactions.reduce((sum, t) => sum + (t.fraud_score || 0), 0) / transactions.length 
-          : 0;
-
-        setMetrics({
-          totalTransactions: total,
-          fraudDetected: fraudulent,
-          safeTransactions: safe,
-          avgFraudProbability: avgScore
-        });
-      } catch (error) {
-        console.error('Error loading metrics:', error);
+          if (!error && data) {
+            dbTransactions = data;
+          }
+        } catch (error) {
+          console.error('Error loading metrics from database:', error);
+        }
       }
+
+      // Merge database and simulated transactions
+      const allTransactions = [...dbTransactions, ...simulatedTransactions];
+
+      const total = allTransactions.length;
+      const fraudulent = allTransactions.filter(t => t.status === 'flagged' || t.status === 'blocked').length;
+      const safe = allTransactions.filter(t => t.status === 'approved').length;
+      const avgScore = allTransactions.length 
+        ? allTransactions.reduce((sum, t) => sum + (t.fraud_score || 0), 0) / allTransactions.length 
+        : 0;
+
+      setMetrics({
+        totalTransactions: total,
+        fraudDetected: fraudulent,
+        safeTransactions: safe,
+        avgFraudProbability: avgScore
+      });
     };
 
     loadMetrics();
@@ -116,7 +126,7 @@ const OverviewCards = () => {
         supabase.removeChannel(channel);
       };
     }
-  }, [user?.merchantProfile?.id]);
+  }, [user?.merchantProfile?.id, simulatedTransactions]);
 
   const fraudRate = metrics.totalTransactions > 0 ? ((metrics.fraudDetected / metrics.totalTransactions) * 100).toFixed(2) : "0.00";
 
