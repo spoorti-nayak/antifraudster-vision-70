@@ -53,8 +53,8 @@ const VendorIntegration = () => {
     crypto.getRandomValues(randomBytes);
     const newKey = `af_live_${Array.from(randomBytes, byte => byte.toString(16).padStart(2, '0')).join('')}`;
     
-    const { error } = await supabase
-      .from('merchants')
+    const { error } = await (supabase as any)
+      .from('merchant_profiles')
       .update({ api_key: newKey })
       .eq('user_id', user.id);
 
@@ -107,11 +107,10 @@ const VendorIntegration = () => {
     }
 
     try {
-      const { error } = await supabase
-        .from('merchants')
+      const { error } = await (supabase as any)
+        .from('merchant_profiles')
         .update({ 
-          domain: websiteUrl,
-          is_active: true 
+          domain: websiteUrl
         })
         .eq('user_id', user.id);
 
@@ -140,11 +139,10 @@ const VendorIntegration = () => {
     }
 
     try {
-      const { error } = await supabase
-        .from('merchants')
+      const { error } = await (supabase as any)
+        .from('merchant_profiles')
         .update({ 
-          domain: '',
-          is_active: false 
+          domain: ''
         })
         .eq('user_id', user.id);
 
