@@ -352,7 +352,7 @@ if (signature === expected) {
             <span>Connect Your E-Commerce Site</span>
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            2-step process: Generate/Use API key → Add website URL → Integrate code
+            3-step process: Generate API key → Add website URL → Integrate code into your site
           </p>
         </CardHeader>
         
@@ -360,12 +360,7 @@ if (signature === expected) {
           {/* Step 1: API Key */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label className="text-base font-medium">Step 1: Your API Key</Label>
-                <p className="text-sm text-muted-foreground">
-                  Generate key here, or from <a href="/store-settings" className="text-primary hover:underline font-medium">Store Settings</a> (for demo store)
-                </p>
-              </div>
+              <Label className="text-base font-medium">Step 1: Generate API Key</Label>
               <Button 
                 variant="outline" 
                 size="sm" 
