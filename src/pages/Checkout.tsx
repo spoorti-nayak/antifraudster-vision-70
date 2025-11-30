@@ -143,19 +143,14 @@ export default function Checkout() {
       if (fraudError) {
         console.error('Fraud check error:', fraudError);
         
-        // Calculate local fraud score based on transaction details
-        const fraudScore = calculateLocalFraudScore(totalPrice, items, data);
+        // Calculate local fraud score with breakdown
+        const fraudAnalysis = calculateLocalFraudScore(totalPrice, items, data);
+        const fraudScore = fraudAnalysis.score;
         const status: 'pending' | 'approved' | 'flagged' | 'blocked' = 
           fraudScore > 70 ? 'blocked' : fraudScore > 40 ? 'flagged' : 'approved';
         const riskLevel = fraudScore > 70 ? 'high' : fraudScore > 40 ? 'medium' : 'low';
         
-        const fraudReasons: string[] = [];
-        if (totalPrice > 1000) fraudReasons.push('High transaction amount');
-        const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-        if (totalQuantity > 10) fraudReasons.push('Unusually high quantity');
-        if (fraudScore > 50) fraudReasons.push('ML model indicates suspicious patterns');
-        
-        // Add transaction to simulation context
+        // Add transaction to simulation context with breakdown
         const simulatedTransaction = {
           id: `txn_${Date.now()}`,
           customer_email: data.email,
@@ -164,13 +159,14 @@ export default function Checkout() {
           status: status,
           fraud_score: fraudScore,
           risk_level: riskLevel,
-          fraud_reasons: fraudReasons.length > 0 ? fraudReasons : null,
+          fraud_reasons: fraudAnalysis.fraudReasons.length > 0 ? fraudAnalysis.fraudReasons : null,
           created_at: new Date().toISOString(),
           metadata: { 
             order_id: order.id,
             card_last4: data.cardNumber.slice(-4),
             from_checkout: true,
-            fraud_check_unavailable: true
+            fraud_check_unavailable: true,
+            risk_breakdown: fraudAnalysis.breakdown
           }
         };
         addTransaction(simulatedTransaction);
@@ -187,9 +183,10 @@ export default function Checkout() {
             message: `Checkout payment ${status} - Fraud Score: ${fraudScore}%`,
             details: { 
               fraud_score: fraudScore, 
-              reasons: fraudReasons,
+              reasons: fraudAnalysis.fraudReasons,
               amount: totalPrice,
-              quantity: totalQuantity
+              quantity: items.reduce((sum, item) => sum + item.quantity, 0),
+              risk_breakdown: fraudAnalysis.breakdown
             },
             is_resolved: false,
             created_at: new Date().toISOString()
@@ -199,7 +196,7 @@ export default function Checkout() {
         
         if (status === 'blocked') {
           toast.error(
-            `⛔ Payment Blocked - Fraud Detected!\n\nFraud Score: ${fraudScore}%\n\n${fraudReasons.join(', ')}`,
+            `⛔ Payment Blocked - Fraud Detected!\n\nFraud Score: ${fraudScore}%\n\n${fraudAnalysis.fraudReasons.join('\n')}`,
             { duration: 10000 }
           );
           await (supabase as any)
@@ -212,7 +209,7 @@ export default function Checkout() {
         
         if (status === 'flagged') {
           toast.warning(
-            `⚠️ Payment Flagged for Review\n\nFraud Score: ${fraudScore}%\n\nYour order is being reviewed.`,
+            `⚠️ Payment Flagged for Review\n\nFraud Score: ${fraudScore}%\n\nReasons:\n${fraudAnalysis.fraudReasons.slice(0, 2).join('\n')}`,
             { duration: 8000 }
           );
         }
@@ -374,36 +371,126 @@ export default function Checkout() {
     }
   };
 
-  // Calculate fraud score based on transaction characteristics
-  const calculateLocalFraudScore = (amount: number, items: any[], formData: CheckoutForm): number => {
-    let score = 0;
+  // Calculate fraud score with advanced ML-style detection
+  const calculateLocalFraudScore = (amount: number, items: any[], formData: CheckoutForm): { 
+    score: number; 
+    breakdown: { factor: string; contribution: number; reason: string }[];
+    fraudReasons: string[];
+  } => {
+    const breakdown: { factor: string; contribution: number; reason: string }[] = [];
+    const fraudReasons: string[] = [];
     
-    // Amount-based scoring
-    if (amount > 2000) score += 40;
-    else if (amount > 1000) score += 25;
-    else if (amount > 500) score += 15;
-    else if (amount > 200) score += 5;
+    // Amount-based scoring (max 40 points)
+    let amountScore = 0;
+    if (amount > 2000) { amountScore = 40; fraudReasons.push(`Very high amount: $${amount.toFixed(2)}`); }
+    else if (amount > 1000) { amountScore = 25; fraudReasons.push(`High amount: $${amount.toFixed(2)}`); }
+    else if (amount > 500) { amountScore = 15; }
+    else if (amount > 200) { amountScore = 5; }
+    if (amountScore > 0) breakdown.push({ factor: 'Transaction Amount', contribution: amountScore, reason: `$${amount.toFixed(2)}` });
     
-    // Quantity-based scoring
+    // Quantity-based scoring (max 35 points)
     const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-    if (totalQuantity > 20) score += 35;
-    else if (totalQuantity > 10) score += 20;
-    else if (totalQuantity > 5) score += 10;
+    let quantityScore = 0;
+    if (totalQuantity > 20) { quantityScore = 35; fraudReasons.push(`Abnormally high quantity: ${totalQuantity} items`); }
+    else if (totalQuantity > 10) { quantityScore = 20; fraudReasons.push(`High quantity: ${totalQuantity} items`); }
+    else if (totalQuantity > 5) { quantityScore = 10; }
+    if (quantityScore > 0) breakdown.push({ factor: 'Item Quantity', contribution: quantityScore, reason: `${totalQuantity} items` });
     
-    // Card number pattern check (simple heuristic)
-    if (formData.cardNumber.startsWith('4111') || formData.cardNumber.startsWith('5555')) {
-      score += 15; // Test card patterns
+    // Velocity check (max 25 points) - check localStorage for recent transactions
+    let velocityScore = 0;
+    const recentTxns = JSON.parse(localStorage.getItem('simulated_transactions') || '[]');
+    const last10Min = recentTxns.filter((t: any) => {
+      const txTime = new Date(t.created_at).getTime();
+      const now = Date.now();
+      return (now - txTime) < 10 * 60 * 1000; // 10 minutes
+    });
+    if (last10Min.length >= 3) { 
+      velocityScore = 25; 
+      fraudReasons.push(`Velocity abuse: ${last10Min.length} transactions in 10 minutes`);
+      breakdown.push({ factor: 'Velocity Check', contribution: velocityScore, reason: `${last10Min.length} recent txns` });
+    } else if (last10Min.length >= 2) {
+      velocityScore = 12;
+      breakdown.push({ factor: 'Velocity Check', contribution: velocityScore, reason: `${last10Min.length} recent txns` });
     }
     
-    // Time-based (late night purchases are slightly riskier)
+    // Geolocation mismatch (max 20 points) - simulate checking if country from formData doesn't match IP
+    let geoScore = 0;
+    const suspiciousCountries = ['Russia', 'Nigeria', 'China', 'Vietnam'];
+    if (suspiciousCountries.includes(formData.country)) {
+      geoScore = 20;
+      fraudReasons.push(`High-risk country: ${formData.country}`);
+      breakdown.push({ factor: 'Geolocation Risk', contribution: geoScore, reason: `${formData.country}` });
+    }
+    
+    // Customer risk profile (max 15 points) - first-time vs returning customer
+    let profileScore = 0;
+    const customerHistory = recentTxns.filter((t: any) => t.customer_email === formData.email);
+    if (customerHistory.length === 0) {
+      profileScore = 15;
+      fraudReasons.push('First-time customer with no purchase history');
+      breakdown.push({ factor: 'Customer Profile', contribution: profileScore, reason: 'First-time buyer' });
+    } else if (customerHistory.length === 1) {
+      profileScore = 8;
+      breakdown.push({ factor: 'Customer Profile', contribution: profileScore, reason: 'New customer' });
+    } else {
+      // Returning customer with good history reduces risk
+      profileScore = -5;
+      breakdown.push({ factor: 'Customer Profile', contribution: 0, reason: 'Trusted customer' });
+    }
+    
+    // Time pattern detection (max 15 points) - suspicious late-night hours
+    let timeScore = 0;
     const hour = new Date().getHours();
-    if (hour >= 1 && hour <= 5) score += 10;
+    if (hour >= 2 && hour <= 6) {
+      timeScore = 15;
+      fraudReasons.push(`Suspicious time: ${hour}:00 (late night)`);
+      breakdown.push({ factor: 'Time Pattern', contribution: timeScore, reason: `${hour}:00 late night` });
+    } else if (hour >= 1 && hour <= 7) {
+      timeScore = 8;
+      breakdown.push({ factor: 'Time Pattern', contribution: timeScore, reason: `${hour}:00 odd hours` });
+    }
     
-    // Average item price (very high or very low can be suspicious)
+    // Shipping vs Billing mismatch (max 20 points)
+    let addressScore = 0;
+    // Simple check: if city differs, flag it
+    const shippingCity = formData.city.toLowerCase().trim();
+    const billingCity = formData.city.toLowerCase().trim(); // In real scenario, you'd have separate billing city
+    // Simulate: if address contains "PO Box" or "Parcel Locker" it's suspicious
+    if (formData.address.toLowerCase().includes('po box') || formData.address.toLowerCase().includes('parcel')) {
+      addressScore = 20;
+      fraudReasons.push('Shipping to PO Box or parcel locker');
+      breakdown.push({ factor: 'Address Mismatch', contribution: addressScore, reason: 'PO Box delivery' });
+    } else if (formData.country !== 'USA' && formData.country !== 'United States') {
+      addressScore = 10;
+      breakdown.push({ factor: 'Address Mismatch', contribution: addressScore, reason: 'International shipping' });
+    }
+    
+    // Card pattern check (max 15 points)
+    let cardScore = 0;
+    if (formData.cardNumber.startsWith('4111') || formData.cardNumber.startsWith('5555')) {
+      cardScore = 15;
+      fraudReasons.push('Test card pattern detected');
+      breakdown.push({ factor: 'Card Validation', contribution: cardScore, reason: 'Test card detected' });
+    }
+    
+    // Average item price anomaly (max 10 points)
+    let priceScore = 0;
     const avgItemPrice = amount / totalQuantity;
-    if (avgItemPrice > 500) score += 15;
+    if (avgItemPrice > 500) {
+      priceScore = 10;
+      breakdown.push({ factor: 'Price Anomaly', contribution: priceScore, reason: `Avg $${avgItemPrice.toFixed(0)}/item` });
+    }
     
-    return Math.min(100, Math.round(score));
+    const totalScore = Math.max(0, Math.min(100, Math.round(
+      amountScore + quantityScore + velocityScore + geoScore + Math.max(0, profileScore) + 
+      timeScore + addressScore + cardScore + priceScore
+    )));
+    
+    return { 
+      score: totalScore, 
+      breakdown: breakdown.sort((a, b) => b.contribution - a.contribution),
+      fraudReasons: fraudReasons.length > 0 ? fraudReasons : ['ML model indicates low risk']
+    };
   };
 
   if (items.length === 0) {
