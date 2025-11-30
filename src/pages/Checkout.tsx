@@ -143,16 +143,28 @@ export default function Checkout() {
       if (fraudError) {
         console.error('Fraud check error:', fraudError);
         
+        // Calculate local fraud score based on transaction details
+        const fraudScore = calculateLocalFraudScore(totalPrice, items, data);
+        const status: 'pending' | 'approved' | 'flagged' | 'blocked' = 
+          fraudScore > 70 ? 'blocked' : fraudScore > 40 ? 'flagged' : 'approved';
+        const riskLevel = fraudScore > 70 ? 'high' : fraudScore > 40 ? 'medium' : 'low';
+        
+        const fraudReasons: string[] = [];
+        if (totalPrice > 1000) fraudReasons.push('High transaction amount');
+        const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+        if (totalQuantity > 10) fraudReasons.push('Unusually high quantity');
+        if (fraudScore > 50) fraudReasons.push('ML model indicates suspicious patterns');
+        
         // Add transaction to simulation context
         const simulatedTransaction = {
           id: `txn_${Date.now()}`,
           customer_email: data.email,
           amount: totalPrice,
           currency: 'USD',
-          status: 'approved' as const,
-          fraud_score: 0,
-          risk_level: 'low',
-          fraud_reasons: null,
+          status: status,
+          fraud_score: fraudScore,
+          risk_level: riskLevel,
+          fraud_reasons: fraudReasons.length > 0 ? fraudReasons : null,
           created_at: new Date().toISOString(),
           metadata: { 
             order_id: order.id,
@@ -162,6 +174,48 @@ export default function Checkout() {
           }
         };
         addTransaction(simulatedTransaction);
+        
+        // Create fraud alert if needed
+        if (status === 'flagged' || status === 'blocked') {
+          const severity: 'low' | 'medium' | 'high' | 'critical' = status === 'blocked' ? 'high' : 'medium';
+          const simulatedAlert = {
+            id: `alert_${Date.now()}`,
+            transaction_id: simulatedTransaction.id,
+            merchant_id: user.merchantProfile?.id || 'unknown',
+            alert_type: status === 'blocked' ? 'payment_blocked' : 'suspicious_activity',
+            severity: severity,
+            message: `Checkout payment ${status} - Fraud Score: ${fraudScore}%`,
+            details: { 
+              fraud_score: fraudScore, 
+              reasons: fraudReasons,
+              amount: totalPrice,
+              quantity: totalQuantity
+            },
+            is_resolved: false,
+            created_at: new Date().toISOString()
+          };
+          addAlert(simulatedAlert);
+        }
+        
+        if (status === 'blocked') {
+          toast.error(
+            `⛔ Payment Blocked - Fraud Detected!\n\nFraud Score: ${fraudScore}%\n\n${fraudReasons.join(', ')}`,
+            { duration: 10000 }
+          );
+          await (supabase as any)
+            .from('orders')
+            .update({ status: 'blocked', fraud_score: fraudScore / 100 })
+            .eq('id', order.id);
+          navigate('/shop');
+          return;
+        }
+        
+        if (status === 'flagged') {
+          toast.warning(
+            `⚠️ Payment Flagged for Review\n\nFraud Score: ${fraudScore}%\n\nYour order is being reviewed.`,
+            { duration: 8000 }
+          );
+        }
         
         toast.success('Order placed successfully!');
         await (supabase as any)
@@ -318,6 +372,38 @@ export default function Checkout() {
     } finally {
       setProcessing(false);
     }
+  };
+
+  // Calculate fraud score based on transaction characteristics
+  const calculateLocalFraudScore = (amount: number, items: any[], formData: CheckoutForm): number => {
+    let score = 0;
+    
+    // Amount-based scoring
+    if (amount > 2000) score += 40;
+    else if (amount > 1000) score += 25;
+    else if (amount > 500) score += 15;
+    else if (amount > 200) score += 5;
+    
+    // Quantity-based scoring
+    const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+    if (totalQuantity > 20) score += 35;
+    else if (totalQuantity > 10) score += 20;
+    else if (totalQuantity > 5) score += 10;
+    
+    // Card number pattern check (simple heuristic)
+    if (formData.cardNumber.startsWith('4111') || formData.cardNumber.startsWith('5555')) {
+      score += 15; // Test card patterns
+    }
+    
+    // Time-based (late night purchases are slightly riskier)
+    const hour = new Date().getHours();
+    if (hour >= 1 && hour <= 5) score += 10;
+    
+    // Average item price (very high or very low can be suspicious)
+    const avgItemPrice = amount / totalQuantity;
+    if (avgItemPrice > 500) score += 15;
+    
+    return Math.min(100, Math.round(score));
   };
 
   if (items.length === 0) {
