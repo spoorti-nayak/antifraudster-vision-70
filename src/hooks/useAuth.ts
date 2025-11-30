@@ -86,16 +86,18 @@ export const useAuthProvider = (): AuthContextType => {
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
-          const merchantProfile = await loadMerchantProfile(session.user.id, session.user.email!);
-          
-          setUser({
-            id: session.user.id,
-            email: session.user.email!,
-            firstName: merchantProfile?.first_name || '',
-            lastName: merchantProfile?.last_name || '',
-            company: merchantProfile?.company_name || '',
-            merchantProfile: merchantProfile || undefined,
-          });
+          setTimeout(() => {
+            loadMerchantProfile(session.user.id, session.user.email!).then(merchantProfile => {
+              setUser({
+                id: session.user.id,
+                email: session.user.email!,
+                firstName: merchantProfile?.first_name || '',
+                lastName: merchantProfile?.last_name || '',
+                company: merchantProfile?.company_name || '',
+                merchantProfile: merchantProfile || undefined,
+              });
+            });
+          }, 0);
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
@@ -106,19 +108,22 @@ export const useAuthProvider = (): AuthContextType => {
 
     initAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
-        const merchantProfile = await loadMerchantProfile(session.user.id, session.user.email!);
-        
-        setUser({
-          id: session.user.id,
-          email: session.user.email!,
-          firstName: merchantProfile?.first_name || '',
-          lastName: merchantProfile?.last_name || '',
-          company: merchantProfile?.company_name || '',
-          merchantProfile: merchantProfile || undefined,
-        });
         setIsLoading(false);
+        
+        setTimeout(() => {
+          loadMerchantProfile(session.user.id, session.user.email!).then(merchantProfile => {
+            setUser({
+              id: session.user.id,
+              email: session.user.email!,
+              firstName: merchantProfile?.first_name || '',
+              lastName: merchantProfile?.last_name || '',
+              company: merchantProfile?.company_name || '',
+              merchantProfile: merchantProfile || undefined,
+            });
+          });
+        }, 0);
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setIsLoading(false);
@@ -143,17 +148,9 @@ export const useAuthProvider = (): AuthContextType => {
       }
 
       if (data.user) {
-        const merchantProfile = await loadMerchantProfile(data.user.id, data.user.email!);
-        
-        setUser({
-          id: data.user.id,
-          email: data.user.email!,
-          firstName: merchantProfile?.first_name || '',
-          lastName: merchantProfile?.last_name || '',
-          company: merchantProfile?.company_name || '',
-          merchantProfile: merchantProfile || undefined,
-        });
-
+        // Auth state change will handle user state and navigation
+        // Just wait a moment for the session to be established
+        await new Promise(resolve => setTimeout(resolve, 500));
         navigate('/dashboard');
       }
     } catch (error: any) {
@@ -201,7 +198,9 @@ export const useAuthProvider = (): AuthContextType => {
           throw new Error('Failed to create merchant profile. Please contact support.');
         }
 
-        // Auto-confirm is enabled, so navigate to dashboard
+        // Auth state change will handle user state and navigation
+        // Wait for session to be established before navigating
+        await new Promise(resolve => setTimeout(resolve, 500));
         navigate('/dashboard');
       }
     } catch (error: any) {
