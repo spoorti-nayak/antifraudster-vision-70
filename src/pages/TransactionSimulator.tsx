@@ -264,7 +264,7 @@ export default function TransactionSimulator() {
 
       const explanation = getMLExplanation(scenarioId, fraudScore, isFraud);
 
-      // Write transaction to database
+      // Write transaction to database (best-effort for demo)
       const { data: transaction, error: txError } = await supabase
         .from('transactions')
         .insert({
@@ -282,26 +282,28 @@ export default function TransactionSimulator() {
         .single();
 
       if (txError) {
-        console.error('Error creating transaction:', txError);
-        toast.error('Failed to create transaction');
-        return;
+        console.warn('Error creating transaction in backend (demo fallback only):', txError);
       }
 
-      // If fraud detected, create alert
+      // If fraud detected, try to create alert (non-blocking)
       if (isFraud && transaction) {
-        await supabase
-          .from('fraud_alerts')
-          .insert({
-            merchant_id: user.merchantProfile.id,
-            transaction_id: transaction.id,
-            alert_type: 'high_risk_transaction',
-            severity: fraudScore > 0.8 ? 'high' : 'medium',
-            message: `Fraudulent transaction detected: ${scenarioId}`,
-            details: {
-              scenario: scenarioId,
-              risk_factors: ['High-risk velocity pattern', 'Suspicious IP', 'Unusual behavior']
-            }
-          });
+        try {
+          await supabase
+            .from('fraud_alerts')
+            .insert({
+              merchant_id: user.merchantProfile.id,
+              transaction_id: transaction.id,
+              alert_type: 'high_risk_transaction',
+              severity: fraudScore > 0.8 ? 'high' : 'medium',
+              message: `Fraudulent transaction detected: ${scenarioId}`,
+              details: {
+                scenario: scenarioId,
+                risk_factors: ['High-risk velocity pattern', 'Suspicious IP', 'Unusual behavior']
+              }
+            });
+        } catch (alertError) {
+          console.warn('Error creating fraud alert (demo fallback only):', alertError);
+        }
       }
 
       const mockResult: SimulationResult = {
