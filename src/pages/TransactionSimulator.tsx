@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useSimulation } from '@/contexts/SimulationContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +22,7 @@ interface SimulationResult {
 
 export default function TransactionSimulator() {
   const { user } = useAuth();
+  const { addTransaction, addAlert } = useSimulation();
   const navigate = useNavigate();
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<SimulationResult[]>([]);
@@ -264,56 +266,71 @@ export default function TransactionSimulator() {
 
       const explanation = getMLExplanation(scenarioId, fraudScore, isFraud);
 
-      // Write transaction to database (best-effort for demo)
-      const { data: transaction, error: txError } = await supabase
-        .from('transactions')
-        .insert({
+      // Create transaction object for context (in-memory)
+      const transactionId = crypto.randomUUID();
+      const customerEmail = `customer_${Math.random().toString(36).substr(2, 9)}@example.com`;
+      const amount = Math.floor(Math.random() * 5000) + 100;
+      
+      const transactionData = {
+        id: transactionId,
+        customer_email: customerEmail,
+        amount: amount,
+        currency: 'INR',
+        status: (isFraud ? 'blocked' : 'approved') as 'pending' | 'approved' | 'flagged' | 'blocked',
+        fraud_score: fraudScore * 100,
+        risk_level: fraudScore > 0.7 ? 'high' : fraudScore > 0.3 ? 'medium' : 'low',
+        fraud_reasons: isFraud ? riskFactors.slice(0, 3) : null,
+        created_at: new Date().toISOString(),
+        metadata: { scenario: scenarioId, simulated: true }
+      };
+
+      // Add to context (shows everywhere)
+      addTransaction(transactionData);
+
+      // If fraud detected, create alert in context
+      if (isFraud) {
+        addAlert({
+          id: crypto.randomUUID(),
+          transaction_id: transactionId,
           merchant_id: user.merchantProfile.id,
-          customer_email: `customer_${Math.random().toString(36).substr(2, 9)}@example.com`,
-          amount: Math.floor(Math.random() * 5000) + 100,
+          alert_type: 'high_risk_transaction',
+          severity: fraudScore > 0.8 ? 'high' : 'medium',
+          message: `Fraudulent transaction detected: ${scenarioId}`,
+          details: {
+            scenario: scenarioId,
+            risk_factors: riskFactors.slice(0, 3),
+            explanation: explanation
+          },
+          is_resolved: false,
+          created_at: new Date().toISOString()
+        });
+      }
+
+      // Also try to write to database (best-effort for when backend is available)
+      try {
+        await supabase.from('transactions').insert({
+          merchant_id: user.merchantProfile.id,
+          customer_email: customerEmail,
+          amount: amount,
           currency: 'INR',
           status: isFraud ? 'blocked' : 'approved',
           fraud_score: fraudScore * 100,
           payment_method: 'credit_card',
           customer_ip: '192.168.1.' + Math.floor(Math.random() * 255),
           metadata: { scenario: scenarioId, simulated: true }
-        })
-        .select()
-        .single();
-
-      if (txError) {
-        console.warn('Error creating transaction in backend (demo fallback only):', txError);
-      }
-
-      // If fraud detected, try to create alert (non-blocking)
-      if (isFraud && transaction) {
-        try {
-          await supabase
-            .from('fraud_alerts')
-            .insert({
-              merchant_id: user.merchantProfile.id,
-              transaction_id: transaction.id,
-              alert_type: 'high_risk_transaction',
-              severity: fraudScore > 0.8 ? 'high' : 'medium',
-              message: `Fraudulent transaction detected: ${scenarioId}`,
-              details: {
-                scenario: scenarioId,
-                risk_factors: ['High-risk velocity pattern', 'Suspicious IP', 'Unusual behavior']
-              }
-            });
-        } catch (alertError) {
-          console.warn('Error creating fraud alert (demo fallback only):', alertError);
-        }
+        });
+      } catch (dbError) {
+        console.warn('Backend unavailable, using in-memory storage only');
       }
 
       const mockResult: SimulationResult = {
-        transaction_id: transaction?.id || crypto.randomUUID(),
+        transaction_id: transactionId,
         type: scenarioId,
         is_fraud: !!isFraud,
         fraud_score: fraudScore,
         status: isFraud ? 'blocked' : 'approved',
         explanation: explanation,
-        risk_factors: riskFactors.slice(0, 3), // Show top 3 factors
+        risk_factors: riskFactors.slice(0, 3),
       };
 
       setResults((prev) => [mockResult, ...prev]);

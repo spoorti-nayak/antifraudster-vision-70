@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { VendorProvider } from "@/contexts/VendorContext";
 import { CartProvider } from "@/contexts/CartContext";
+import { SimulationProvider } from "@/contexts/SimulationContext";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -34,10 +35,11 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <VendorProvider>
-            <CartProvider>
-              <Toaster />
-              <Sonner />
-              <Routes>
+            <SimulationProvider>
+              <CartProvider>
+                <Toaster />
+                <Sonner />
+                <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
@@ -64,6 +66,7 @@ const App = () => (
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </CartProvider>
+            </SimulationProvider>
           </VendorProvider>
         </AuthProvider>
       </BrowserRouter>

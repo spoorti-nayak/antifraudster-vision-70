@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useSimulation } from "@/contexts/SimulationContext";
 
 interface Transaction {
   id: string;
@@ -84,6 +85,7 @@ export interface TransactionsTableRef {
 
 const TransactionsTable = forwardRef<TransactionsTableRef, TransactionsTableProps>(({ searchQuery, hideToolbar }, ref) => {
   const { user } = useAuth();
+  const { transactions: simulatedTransactions } = useSimulation();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -109,79 +111,12 @@ const TransactionsTable = forwardRef<TransactionsTableRef, TransactionsTableProp
         .limit(100);
 
       if (error) {
-        console.warn('Backend unavailable, using demo transactions:', error);
-        // Fallback to mock data for demo
-        const mockTransactions: Transaction[] = [
-          {
-            id: '1',
-            customer_email: 'john.smith@example.com',
-            amount: 2450,
-            currency: 'INR',
-            status: 'approved',
-            fraud_score: 8,
-            risk_level: 'low',
-            fraud_reasons: null,
-            created_at: new Date().toISOString()
-          },
-          {
-            id: '2',
-            customer_email: 'suspicious.user@temp.com',
-            amount: 8900,
-            currency: 'INR',
-            status: 'blocked',
-            fraud_score: 94,
-            risk_level: 'high',
-            fraud_reasons: ['Stolen card pattern', 'Unusual velocity'],
-            created_at: new Date(Date.now() - 120000).toISOString()
-          },
-          {
-            id: '3',
-            customer_email: 'alice.kumar@gmail.com',
-            amount: 1200,
-            currency: 'INR',
-            status: 'approved',
-            fraud_score: 5,
-            risk_level: 'low',
-            fraud_reasons: null,
-            created_at: new Date(Date.now() - 300000).toISOString()
-          },
-          {
-            id: '4',
-            customer_email: 'fraud.test@suspicious.net',
-            amount: 15000,
-            currency: 'INR',
-            status: 'flagged',
-            fraud_score: 78,
-            risk_level: 'high',
-            fraud_reasons: ['High amount', 'New location'],
-            created_at: new Date(Date.now() - 450000).toISOString()
-          },
-          {
-            id: '5',
-            customer_email: 'maria.jones@company.com',
-            amount: 3200,
-            currency: 'INR',
-            status: 'approved',
-            fraud_score: 12,
-            risk_level: 'low',
-            fraud_reasons: null,
-            created_at: new Date(Date.now() - 600000).toISOString()
-          },
-          {
-            id: '6',
-            customer_email: 'test.card@stolen.com',
-            amount: 9999,
-            currency: 'INR',
-            status: 'blocked',
-            fraud_score: 96,
-            risk_level: 'high',
-            fraud_reasons: ['Test card detected', 'Sequential CVV'],
-            created_at: new Date(Date.now() - 750000).toISOString()
-          }
-        ];
-        setTransactions(mockTransactions);
+        console.warn('Backend unavailable, using simulated transactions:', error);
+        // Use simulated transactions from context
+        setTransactions(simulatedTransactions as any);
       } else {
-        setTransactions(data || []);
+        // Merge backend and simulated transactions
+        setTransactions([...simulatedTransactions as any, ...data || []]);
       }
       setIsLoading(false);
     };
@@ -214,7 +149,7 @@ const TransactionsTable = forwardRef<TransactionsTableRef, TransactionsTableProp
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.merchantProfile?.id]);
+  }, [user?.merchantProfile?.id, simulatedTransactions]);
 
   useImperativeHandle(ref, () => ({
     export: exportTransactions,

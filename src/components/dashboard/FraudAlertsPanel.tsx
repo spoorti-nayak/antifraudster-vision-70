@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useSimulation } from "@/contexts/SimulationContext";
 
 interface FraudAlert {
   id: string;
@@ -120,6 +121,7 @@ const AlertItem = ({
 
 const FraudAlertsPanel = () => {
   const { user } = useAuth();
+  const { alerts: simulatedAlerts } = useSimulation();
   const [alerts, setAlerts] = useState<FraudAlert[]>([]);
   const [viewingAlert, setViewingAlert] = useState<FraudAlert | null>(null);
 
@@ -137,48 +139,14 @@ const FraudAlertsPanel = () => {
         .limit(10);
 
       if (error) {
-        console.warn('Backend unavailable, using demo alerts:', error);
-        // Fallback to mock alerts for demo
-        const mockAlerts: FraudAlert[] = [
-          {
-            id: '1',
-            transaction_id: 'tx_001',
-            merchant_id: user.merchantProfile.id,
-            alert_type: 'high_risk_transaction',
-            severity: 'high',
-            message: 'Stolen card pattern detected',
-            details: { risk_score: 94, factors: ['Card-not-present', 'Velocity spike'] },
-            is_resolved: false,
-            created_at: new Date().toISOString()
-          },
-          {
-            id: '2',
-            transaction_id: 'tx_002',
-            merchant_id: user.merchantProfile.id,
-            alert_type: 'suspicious_activity',
-            severity: 'medium',
-            message: 'Unusual transaction pattern',
-            details: { risk_score: 72, factors: ['New location', 'High amount'] },
-            is_resolved: false,
-            created_at: new Date(Date.now() - 300000).toISOString()
-          },
-          {
-            id: '3',
-            transaction_id: 'tx_003',
-            merchant_id: user.merchantProfile.id,
-            alert_type: 'velocity_abuse',
-            severity: 'high',
-            message: 'Multiple transactions detected',
-            details: { risk_score: 88, factors: ['14 transactions in 8 minutes'] },
-            is_resolved: false,
-            created_at: new Date(Date.now() - 600000).toISOString()
-          }
-        ];
-        setAlerts(mockAlerts);
+        console.warn('Backend unavailable, using simulated alerts:', error);
+        // Use simulated alerts from context
+        setAlerts(simulatedAlerts);
         return;
       }
 
-      setAlerts(data || []);
+      // Merge backend and simulated alerts
+      setAlerts([...simulatedAlerts, ...data || []]);
     };
 
     loadAlerts();
@@ -203,7 +171,7 @@ const FraudAlertsPanel = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.merchantProfile?.id]);
+  }, [user?.merchantProfile?.id, simulatedAlerts]);
 
   const handleResolve = async (alertId: string) => {
     const { error } = await supabase
