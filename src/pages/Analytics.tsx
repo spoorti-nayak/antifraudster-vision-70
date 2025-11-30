@@ -120,7 +120,7 @@ const Analytics = () => {
       </div>
 
       {/* Charts */}
-      {isConnected && hasData ? (
+      {hasData ? (
         <Tabs defaultValue="overview" className="space-y-6">
           <TabsList className="grid w-full grid-cols-4 glass-effect">
             <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -143,7 +143,7 @@ const Analytics = () => {
           <TabsContent value="trends" className="space-y-6">
             <Card className="card-3d">
               <CardHeader>
-                <CardTitle>Detection & Performance Trends</CardTitle>
+                <CardTitle>Detection &amp; Performance Trends</CardTitle>
                 <p className="text-sm text-muted-foreground">
                   Real-time monitoring of detection rates, throughput, and response times
                 </p>
@@ -227,7 +227,7 @@ const Analytics = () => {
               Connect Your Website to View Analytics
             </h3>
             <p className="text-muted-foreground mb-6 max-w-md">
-              To view analytics and performance metrics, you need to connect your website through the vendor integration.
+              To view full production analytics and performance metrics, connect your website through the vendor integration. You can still use the simulator above without connecting.
             </p>
             <Button asChild className="gradient-primary">
               <Link to="/vendors">

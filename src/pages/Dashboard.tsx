@@ -49,30 +49,19 @@ const Dashboard = () => {
         <OverviewCards />
       </div>
 
-      {/* Real-time Monitoring Grid */}
-      {isConnected ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Transaction Stream */}
-          <div className="animate-slide-up card-3d" style={{ animationDelay: '0.1s' }}>
-            <TransactionStream />
-          </div>
-          
-          {/* Fraud Alerts */}
-          <div className="animate-slide-up card-3d" style={{ animationDelay: '0.2s' }}>
-            <FraudAlertsPanel />
-          </div>
-        </div>
-      ) : (
-        <Card className="animate-slide-up">
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <Settings className="h-16 w-16 text-muted-foreground mb-4" />
-            <h3 className="text-xl font-semibold text-foreground mb-2">
-              Connect Your Website to Start Monitoring
+      {/* Connection Status Notice */}
+      {!isConnected && (
+        <Card className="animate-slide-up mb-4">
+          <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+            <Settings className="h-12 w-12 text-muted-foreground mb-3" />
+            <h3 className="text-lg font-semibold text-foreground mb-1">
+              Connect Your Website for Live Production Data
             </h3>
-            <p className="text-muted-foreground mb-6 max-w-md">
-              To view real-time transaction data and fraud alerts, you need to connect your website through the vendor integration.
+            <p className="text-muted-foreground mb-4 max-w-md text-sm">
+              You&apos;re currently viewing the simulation dashboard. Connect your website to stream real
+              transactions from your store in real time.
             </p>
-            <Button asChild className="gradient-primary">
+            <Button asChild size="sm" className="gradient-primary">
               <Link to="/vendors">
                 Set Up Integration
               </Link>
@@ -80,6 +69,19 @@ const Dashboard = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* Real-time Monitoring Grid (uses live data when connected, simulation otherwise) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Transaction Stream */}
+        <div className="animate-slide-up card-3d" style={{ animationDelay: '0.1s' }}>
+          <TransactionStream />
+        </div>
+        
+        {/* Fraud Alerts */}
+        <div className="animate-slide-up card-3d" style={{ animationDelay: '0.2s' }}>
+          <FraudAlertsPanel />
+        </div>
+      </div>
 
     </div>
   );
