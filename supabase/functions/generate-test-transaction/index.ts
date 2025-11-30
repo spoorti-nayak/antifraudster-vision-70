@@ -282,10 +282,17 @@ serve(async (req) => {
         status: 200,
       }
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error("Simulation error:", error);
+
+    const message =
+      error?.context?.error ||
+      error?.context?.message ||
+      error?.message ||
+      (typeof error === "string" ? error : JSON.stringify(error));
+
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: message }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,
