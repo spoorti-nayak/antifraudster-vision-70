@@ -16,6 +16,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useSimulation } from "@/contexts/SimulationContext";
+import TransactionRiskDetails from "./TransactionRiskDetails";
 
 interface FraudAlert {
   id: string;
@@ -121,9 +122,10 @@ const AlertItem = ({
 
 const FraudAlertsPanel = () => {
   const { user } = useAuth();
-  const { alerts: simulatedAlerts } = useSimulation();
+  const { alerts: simulatedAlerts, transactions: simulatedTransactions } = useSimulation();
   const [alerts, setAlerts] = useState<FraudAlert[]>([]);
   const [viewingAlert, setViewingAlert] = useState<FraudAlert | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
 
   useEffect(() => {
     if (!user?.merchantProfile?.id) return;
@@ -189,57 +191,71 @@ const FraudAlertsPanel = () => {
 
   const handleView = (alert: FraudAlert) => {
     setViewingAlert(alert);
+    // Find the transaction associated with this alert
+    const transaction = simulatedTransactions.find(t => t.id === alert.transaction_id);
+    if (transaction) {
+      setSelectedTransaction(transaction);
+    }
   };
 
   const activeAlerts = alerts.filter(a => !a.is_resolved);
   const highRiskCount = activeAlerts.filter(a => a.severity === 'high' || a.severity === 'critical').length;
 
   return (
-    <Card className="h-[600px] flex flex-col">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center space-x-2">
-            <AlertTriangle className="h-5 w-5" />
-            <span>Fraud Alerts</span>
-          </CardTitle>
-          <div className="flex items-center space-x-2">
-            {highRiskCount > 0 && (
-              <Badge className="status-fraud text-xs animate-pulse">
-                {highRiskCount} High Risk
-              </Badge>
-            )}
-            <Badge variant="outline" className="text-xs">
-              {activeAlerts.length} Active
-            </Badge>
-          </div>
-        </div>
-      </CardHeader>
-      
-      <CardContent className="flex-1 overflow-hidden p-0">
-        <ScrollArea className="h-[480px] w-full">
-          <div className="space-y-3 p-6">
-              {activeAlerts.map((alert) => (
-                <AlertItem 
-                  key={alert.id} 
-                  alert={alert} 
-                  onResolve={handleResolve}
-                  onView={handleView}
-                />
-              ))}
-              
-              {activeAlerts.length === 0 && (
-                <div className="flex items-center justify-center h-32 text-muted-foreground">
-                  <div className="text-center">
-                    <AlertTriangle className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p>No active fraud alerts</p>
-                    <p className="text-xs">Your transactions are secure</p>
-                  </div>
-                </div>
+    <>
+      <Card className="h-[600px] flex flex-col">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center space-x-2">
+              <AlertTriangle className="h-5 w-5" />
+              <span>Fraud Alerts</span>
+            </CardTitle>
+            <div className="flex items-center space-x-2">
+              {highRiskCount > 0 && (
+                <Badge className="status-fraud text-xs animate-pulse">
+                  {highRiskCount} High Risk
+                </Badge>
               )}
+              <Badge variant="outline" className="text-xs">
+                {activeAlerts.length} Active
+              </Badge>
+            </div>
           </div>
-        </ScrollArea>
-      </CardContent>
-    </Card>
+        </CardHeader>
+        
+        <CardContent className="flex-1 overflow-hidden p-0">
+          <ScrollArea className="h-[480px] w-full">
+            <div className="space-y-3 p-6">
+                {activeAlerts.map((alert) => (
+                  <AlertItem 
+                    key={alert.id} 
+                    alert={alert} 
+                    onResolve={handleResolve}
+                    onView={handleView}
+                  />
+                ))}
+                
+                {activeAlerts.length === 0 && (
+                  <div className="flex items-center justify-center h-32 text-muted-foreground">
+                    <div className="text-center">
+                      <AlertTriangle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p>No active fraud alerts</p>
+                      <p className="text-xs">Your transactions are secure</p>
+                    </div>
+                  </div>
+                )}
+            </div>
+          </ScrollArea>
+        </CardContent>
+      </Card>
+      
+      {/* Transaction Risk Details Modal */}
+      <TransactionRiskDetails 
+        transaction={selectedTransaction}
+        open={!!selectedTransaction}
+        onClose={() => setSelectedTransaction(null)}
+      />
+    </>
   );
 };
 
