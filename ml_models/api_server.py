@@ -18,7 +18,7 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 # Load models at startup
-MODEL_PATH = 'trained_models/'
+MODEL_PATH = 'trained_models/advanced/'
 model = None
 scaler = None
 metadata = None
