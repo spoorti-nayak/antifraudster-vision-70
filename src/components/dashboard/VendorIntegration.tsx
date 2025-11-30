@@ -42,6 +42,37 @@ const VendorIntegration = () => {
     }
   }, [user?.merchantProfile]);
 
+  const generateApiKey = async () => {
+    if (!user?.id) {
+      toast.error("Please log in first");
+      return;
+    }
+
+    // Generate 64-character secure API key
+    const randomBytes = new Uint8Array(32);
+    crypto.getRandomValues(randomBytes);
+    const newKey = `af_live_${Array.from(randomBytes, byte => byte.toString(16).padStart(2, '0')).join('')}`;
+    
+    const { error } = await supabase
+      .from('merchants')
+      .update({ api_key: newKey })
+      .eq('user_id', user.id);
+
+    if (error) {
+      console.error('Error generating API key:', error);
+      toast.error("Failed to generate API key");
+      return;
+    }
+
+    setApiKey(newKey);
+    await refreshAuth();
+    
+    // Update connection status if website is already configured
+    if (websiteUrl && websiteUrl.trim() !== '') {
+      setIsConnected(true);
+    }
+    toast.success("API key generated successfully! Keep it secure.");
+  };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -321,26 +352,36 @@ if (signature === expected) {
             <span>Connect Your E-Commerce Site</span>
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            2-step process: Add website URL → Integrate code into your site (API key from Store Settings)
+            2-step process: Generate/Use API key → Add website URL → Integrate code
           </p>
         </CardHeader>
         
         <CardContent className="space-y-6">
           {/* Step 1: API Key */}
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-base font-medium">Step 1: Your API Key</Label>
-              <p className="text-sm text-muted-foreground">
-                Go to <a href="/store-settings" className="text-primary hover:underline font-medium">Store Settings</a> to generate your API key, then it will appear here
-              </p>
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label className="text-base font-medium">Step 1: Your API Key</Label>
+                <p className="text-sm text-muted-foreground">
+                  Generate key here, or from <a href="/store-settings" className="text-primary hover:underline font-medium">Store Settings</a> (for demo store)
+                </p>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={generateApiKey}
+              >
+                <Key className="h-4 w-4 mr-2" />
+                Generate New Key
+              </Button>
             </div>
             
             <div className="flex gap-2">
               <Input
                 value={apiKey}
                 readOnly
-                placeholder="API key from Store Settings will appear here"
-                className="font-mono text-sm bg-muted"
+                placeholder="Click 'Generate New Key' to create your API key"
+                className="font-mono text-sm"
               />
               {apiKey && (
                 <Button
