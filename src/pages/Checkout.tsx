@@ -6,6 +6,7 @@ import * as z from 'zod';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useCart } from '@/contexts/CartContext';
+import { useSimulation } from '@/contexts/SimulationContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -31,6 +32,7 @@ export default function Checkout() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { items, totalPrice, clearCart } = useCart();
+  const { addTransaction, addAlert } = useSimulation();
   const [processing, setProcessing] = useState(false);
 
   const form = useForm<CheckoutForm>({
@@ -140,11 +142,34 @@ export default function Checkout() {
 
       if (fraudError) {
         console.error('Fraud check error:', fraudError);
-        toast.error('Fraud detection service unavailable. Order will be reviewed manually.');
+        
+        // Add transaction to simulation context
+        const simulatedTransaction = {
+          id: `txn_${Date.now()}`,
+          customer_email: data.email,
+          amount: totalPrice,
+          currency: 'USD',
+          status: 'approved' as const,
+          fraud_score: 0,
+          risk_level: 'low',
+          fraud_reasons: null,
+          created_at: new Date().toISOString(),
+          metadata: { 
+            order_id: order.id,
+            card_last4: data.cardNumber.slice(-4),
+            from_checkout: true,
+            fraud_check_unavailable: true
+          }
+        };
+        addTransaction(simulatedTransaction);
+        
+        toast.success('Order placed successfully!');
         await (supabase as any)
           .from('orders')
-          .update({ status: 'pending', fraud_score: 0 })
+          .update({ status: 'completed', fraud_score: 0 })
           .eq('id', order.id);
+        
+        clearCart();
         navigate('/shop');
         return;
       }
@@ -153,6 +178,25 @@ export default function Checkout() {
 
       const fraudScore = fraudResult?.fraud_score || 0;
       const status = fraudResult?.status || 'approved';
+
+      // Add transaction to simulation context
+      const simulatedTransaction = {
+        id: `txn_${Date.now()}`,
+        customer_email: data.email,
+        amount: totalPrice,
+        currency: 'USD',
+        status: status as 'pending' | 'approved' | 'flagged' | 'blocked',
+        fraud_score: fraudScore,
+        risk_level: fraudResult?.risk_level || 'low',
+        fraud_reasons: fraudResult?.reasons || null,
+        created_at: new Date().toISOString(),
+        metadata: { 
+          order_id: order.id,
+          card_last4: data.cardNumber.slice(-4),
+          from_checkout: true
+        }
+      };
+      addTransaction(simulatedTransaction);
 
       // Create transaction record in dashboard
       const { data: transaction } = await supabase
@@ -177,7 +221,21 @@ export default function Checkout() {
 
       // Check fraud result status
       if (status === 'blocked') {
-        // Create fraud alert
+        // Create fraud alert in context
+        const simulatedAlert = {
+          id: `alert_${Date.now()}`,
+          transaction_id: simulatedTransaction.id,
+          merchant_id: user.merchantProfile?.id || 'unknown',
+          alert_type: 'payment_blocked',
+          severity: 'high' as const,
+          message: 'Checkout payment blocked due to fraud detection',
+          details: fraudResult,
+          is_resolved: false,
+          created_at: new Date().toISOString()
+        };
+        addAlert(simulatedAlert);
+        
+        // Create fraud alert in database if available
         if (transaction) {
           await supabase
             .from('fraud_alerts')
@@ -214,17 +272,32 @@ export default function Checkout() {
       }
 
       // Create alert for flagged transactions
-      if (status === 'flagged' && transaction) {
-        await supabase
-          .from('fraud_alerts')
-          .insert({
-            merchant_id: user.merchantProfile.id,
-            transaction_id: transaction.id,
-            alert_type: 'suspicious_activity',
-            severity: 'medium',
-            message: 'Checkout payment flagged for review',
-            details: fraudResult
-          });
+      if (status === 'flagged') {
+        const simulatedAlert = {
+          id: `alert_${Date.now()}`,
+          transaction_id: simulatedTransaction.id,
+          merchant_id: user.merchantProfile?.id || 'unknown',
+          alert_type: 'suspicious_activity',
+          severity: 'medium' as const,
+          message: 'Checkout payment flagged for review',
+          details: fraudResult,
+          is_resolved: false,
+          created_at: new Date().toISOString()
+        };
+        addAlert(simulatedAlert);
+        
+        if (transaction) {
+          await supabase
+            .from('fraud_alerts')
+            .insert({
+              merchant_id: user.merchantProfile.id,
+              transaction_id: transaction.id,
+              alert_type: 'suspicious_activity',
+              severity: 'medium',
+              message: 'Checkout payment flagged for review',
+              details: fraudResult
+            });
+        }
       }
 
       // Update order status to completed (approved or flagged but allowed)
