@@ -141,113 +141,56 @@ export default function Checkout() {
       );
 
       if (fraudError) {
-        console.error('Fraud check error:', fraudError);
-        
-        // Calculate local fraud score with breakdown
-        const fraudAnalysis = calculateLocalFraudScore(totalPrice, items, data);
-        const fraudScore = fraudAnalysis.score;
-        const status: 'pending' | 'approved' | 'flagged' | 'blocked' = 
-          fraudScore > 70 ? 'blocked' : fraudScore > 40 ? 'flagged' : 'approved';
-        const riskLevel = fraudScore > 70 ? 'high' : fraudScore > 40 ? 'medium' : 'low';
-        
-        // Add transaction to simulation context with breakdown
-        const simulatedTransaction = {
-          id: `txn_${Date.now()}`,
-          customer_email: data.email,
-          amount: totalPrice,
-          currency: 'USD',
-          status: status,
-          fraud_score: fraudScore,
-          risk_level: riskLevel,
-          fraud_reasons: fraudAnalysis.fraudReasons.length > 0 ? fraudAnalysis.fraudReasons : null,
-          created_at: new Date().toISOString(),
-          metadata: { 
-            order_id: order.id,
-            card_last4: data.cardNumber.slice(-4),
-            from_checkout: true,
-            fraud_check_unavailable: true,
-            risk_breakdown: fraudAnalysis.breakdown
-          }
-        };
-        addTransaction(simulatedTransaction);
-        
-        // Create fraud alert if needed
-        if (status === 'flagged' || status === 'blocked') {
-          const severity: 'low' | 'medium' | 'high' | 'critical' = status === 'blocked' ? 'high' : 'medium';
-          const simulatedAlert = {
-            id: `alert_${Date.now()}`,
-            transaction_id: simulatedTransaction.id,
-            merchant_id: user.merchantProfile?.id || 'unknown',
-            alert_type: status === 'blocked' ? 'payment_blocked' : 'suspicious_activity',
-            severity: severity,
-            message: `Checkout payment ${status} - Fraud Score: ${fraudScore}%`,
-            details: { 
-              fraud_score: fraudScore, 
-              reasons: fraudAnalysis.fraudReasons,
-              amount: totalPrice,
-              quantity: items.reduce((sum, item) => sum + item.quantity, 0),
-              risk_breakdown: fraudAnalysis.breakdown
-            },
-            is_resolved: false,
-            created_at: new Date().toISOString()
-          };
-          addAlert(simulatedAlert);
-        }
-        
-        if (status === 'blocked') {
-          toast.error(
-            `⛔ Payment Blocked - Fraud Detected!\n\nFraud Score: ${fraudScore}%\n\n${fraudAnalysis.fraudReasons.join('\n')}`,
-            { duration: 10000 }
-          );
-          await (supabase as any)
-            .from('orders')
-            .update({ status: 'blocked', fraud_score: fraudScore / 100 })
-            .eq('id', order.id);
-          navigate('/shop');
-          return;
-        }
-        
-        if (status === 'flagged') {
-          toast.warning(
-            `⚠️ Payment Flagged for Review\n\nFraud Score: ${fraudScore}%\n\nReasons:\n${fraudAnalysis.fraudReasons.slice(0, 2).join('\n')}`,
-            { duration: 8000 }
-          );
-        }
-        
-        toast.success('Order placed successfully!');
-        await (supabase as any)
-          .from('orders')
-          .update({ status: 'completed', fraud_score: 0 })
-          .eq('id', order.id);
-        
-        clearCart();
-        navigate('/shop');
+        console.error('❌ ML fraud detection unavailable:', fraudError);
+        toast.error('Fraud detection service unavailable. Please try again.');
         return;
       }
 
-      console.log('Fraud analysis result:', fraudResult);
+      console.log('✅ ML fraud analysis result:', fraudResult);
 
-      const fraudScore = fraudResult?.fraud_score || 0;
+      const fraudScore = fraudResult?.fraud_score || 0; // Already 0-100 from backend
       const status = fraudResult?.status || 'approved';
+      const isHighRisk = fraudScore >= 70;
 
-      // Add transaction to simulation context
-      const simulatedTransaction = {
-        id: `txn_${Date.now()}`,
+      // Add transaction to simulation context for real-time dashboard updates
+      const transactionId = fraudResult.transaction_id || `txn_${Date.now()}`;
+      addTransaction({
+        id: transactionId,
         customer_email: data.email,
         amount: totalPrice,
         currency: 'USD',
         status: status as 'pending' | 'approved' | 'flagged' | 'blocked',
-        fraud_score: fraudScore,
-        risk_level: fraudResult?.risk_level || 'low',
-        fraud_reasons: fraudResult?.reasons || null,
+        fraud_score: fraudScore / 100, // Convert back to 0-1 for context
+        risk_level: fraudResult.risk_level || 'low',
+        fraud_reasons: fraudResult.reasons || null,
         created_at: new Date().toISOString(),
-        metadata: { 
+        metadata: {
           order_id: order.id,
           card_last4: data.cardNumber.slice(-4),
-          from_checkout: true
+          from_checkout: true,
+          ml_model_used: fraudResult.model_used || 'unknown'
         }
-      };
-      addTransaction(simulatedTransaction);
+      });
+
+      // Create fraud alert if detected by ML
+      if (isHighRisk) {
+        addAlert({
+          id: `alert_${Date.now()}`,
+          transaction_id: transactionId,
+          merchant_id: user.merchantProfile?.id || 'unknown',
+          alert_type: fraudResult.risk_level === 'critical' ? 'suspicious_pattern' : 'high_risk_score',
+          severity: fraudScore >= 85 ? 'critical' : 'high',
+          message: fraudResult.explanation?.summary || `ML detected high-risk transaction: $${totalPrice.toFixed(2)}`,
+          details: { 
+            fraud_score: fraudScore,
+            ml_model: fraudResult.model_used,
+            probability: fraudResult.probability,
+            ...fraudResult
+          },
+          is_resolved: false,
+          created_at: new Date().toISOString()
+        });
+      }
 
       // Create transaction record in dashboard
       const { data: transaction } = await supabase
@@ -258,13 +201,14 @@ export default function Checkout() {
           amount: totalPrice,
           currency: 'USD',
           status: status,
-          fraud_score: fraudScore,
+          fraud_score: fraudScore / 100,
           payment_method: 'credit_card',
           customer_ip: '0.0.0.0',
           metadata: { 
             order_id: order.id,
             card_last4: data.cardNumber.slice(-4),
-            from_checkout: true
+            from_checkout: true,
+            ml_model: fraudResult.model_used
           }
         })
         .select()
@@ -272,20 +216,6 @@ export default function Checkout() {
 
       // Check fraud result status
       if (status === 'blocked') {
-        // Create fraud alert in context
-        const simulatedAlert = {
-          id: `alert_${Date.now()}`,
-          transaction_id: simulatedTransaction.id,
-          merchant_id: user.merchantProfile?.id || 'unknown',
-          alert_type: 'payment_blocked',
-          severity: 'high' as const,
-          message: 'Checkout payment blocked due to fraud detection',
-          details: fraudResult,
-          is_resolved: false,
-          created_at: new Date().toISOString()
-        };
-        addAlert(simulatedAlert);
-        
         // Create fraud alert in database if available
         if (transaction) {
           await supabase
@@ -295,7 +225,7 @@ export default function Checkout() {
               transaction_id: transaction.id,
               alert_type: 'payment_blocked',
               severity: 'high',
-              message: 'Checkout payment blocked due to fraud detection',
+              message: 'Checkout payment blocked due to ML fraud detection',
               details: fraudResult
             });
         }
@@ -311,10 +241,15 @@ export default function Checkout() {
 
         const explanation = fraudResult.explanation?.summary || 
                           fraudResult.reasons?.join(', ') || 
-                          'Transaction blocked due to suspicious activity';
+                          'Transaction blocked due to ML fraud detection';
 
         toast.error(
-          `⛔ Payment Blocked - Fraud Detected!\n\nFraud Score: ${fraudScore}%\n\n${explanation}`,
+          <div>
+            <strong>🚨 Payment Blocked - ML Fraud Detection</strong>
+            <p className="text-sm mt-1">Fraud Score: {fraudScore}%</p>
+            <p className="text-sm">Model: {fraudResult.model_used || 'ML Ensemble'}</p>
+            <p className="text-sm mt-1">{explanation}</p>
+          </div>,
           { duration: 10000 }
         );
         
@@ -324,19 +259,6 @@ export default function Checkout() {
 
       // Create alert for flagged transactions
       if (status === 'flagged') {
-        const simulatedAlert = {
-          id: `alert_${Date.now()}`,
-          transaction_id: simulatedTransaction.id,
-          merchant_id: user.merchantProfile?.id || 'unknown',
-          alert_type: 'suspicious_activity',
-          severity: 'medium' as const,
-          message: 'Checkout payment flagged for review',
-          details: fraudResult,
-          is_resolved: false,
-          created_at: new Date().toISOString()
-        };
-        addAlert(simulatedAlert);
-        
         if (transaction) {
           await supabase
             .from('fraud_alerts')
@@ -345,13 +267,23 @@ export default function Checkout() {
               transaction_id: transaction.id,
               alert_type: 'suspicious_activity',
               severity: 'medium',
-              message: 'Checkout payment flagged for review',
+              message: 'Checkout payment flagged for ML review',
               details: fraudResult
             });
         }
+        
+        toast.warning(
+          <div>
+            <strong>⚠️  Payment Under ML Review</strong>
+            <p className="text-sm mt-1">Fraud Score: {fraudScore}%</p>
+            <p className="text-sm">Model: {fraudResult.model_used || 'ML Ensemble'}</p>
+            <p className="text-sm mt-1">Your payment is being verified by our ML system.</p>
+          </div>,
+          { duration: 8000 }
+        );
       }
 
-      // Update order status to completed (approved or flagged but allowed)
+      // Update order status (approved or flagged)
       await (supabase as any)
         .from('orders')
         .update({ 
@@ -360,9 +292,28 @@ export default function Checkout() {
         })
         .eq('id', order.id);
 
-      clearCart();
-      toast.success('Order placed successfully!');
-      navigate('/shop');
+      if (status === 'flagged') {
+        setTimeout(() => {
+          clearCart();
+          navigate('/');
+          toast.success('Order submitted for ML review. You will be notified via email.');
+        }, 3000);
+      } else {
+        toast.success(
+          <div>
+            <strong>✅ Payment Successful - ML Verified</strong>
+            <p className="text-sm mt-1">Fraud Score: {fraudScore}% (Low Risk)</p>
+            <p className="text-sm">Model: {fraudResult.model_used || 'ML Ensemble'}</p>
+            <p className="text-sm mt-1">Thank you for your purchase!</p>
+          </div>,
+          { duration: 5000 }
+        );
+        
+        setTimeout(() => {
+          clearCart();
+          navigate('/');
+        }, 2000);
+      }
     } catch (error) {
       console.error('Checkout error:', error);
       toast.error('Failed to process order. Please try again.');

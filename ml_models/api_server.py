@@ -24,23 +24,24 @@ scaler = None
 metadata = None
 
 def load_models():
-    """Load trained models and scaler"""
+    """Load trained advanced models, scaler, and metadata"""
     global model, scaler, metadata
     
     try:
-        if not os.path.exists(f'{MODEL_PATH}best_model.pkl'):
+        # Try loading advanced models first (production-level)
+        if os.path.exists(f'{MODEL_PATH}best_model.pkl'):
+            model = joblib.load(f'{MODEL_PATH}best_model.pkl')
+            scaler = joblib.load(f'{MODEL_PATH}scaler.pkl')
+            metadata = joblib.load(f'{MODEL_PATH}metadata.pkl')
+            print("✅ Advanced models loaded successfully")
+            print(f"   - Model: {metadata.get('best_model', 'Unknown')}")
+            print(f"   - Features: {len(metadata.get('features', []))}")
+            print(f"   - Training AUC: {metadata['results'][metadata['best_model']]['auc']:.4f}")
+            return True
+        else:
             print("⚠️  Warning: Trained models not found!")
-            print("   Please run 'python train.py' first.")
+            print("   Please run 'python train_advanced.py' first to train production models")
             return False
-        
-        model = joblib.load(f'{MODEL_PATH}best_model.pkl')
-        scaler = joblib.load(f'{MODEL_PATH}scaler.pkl')
-        metadata = joblib.load(f'{MODEL_PATH}metadata.pkl')
-        
-        print("✅ Models loaded successfully!")
-        print(f"   Model: {metadata['best_model']}")
-        print(f"   Features: {len(metadata['features'])}")
-        return True
     except Exception as e:
         print(f"❌ Error loading models: {e}")
         return False
@@ -99,17 +100,39 @@ def predict():
         data = request.get_json()
         features_dict = data.get('features', {})
         
-        # Validate features
-        required_features = metadata['features']
-        missing_features = [f for f in required_features if f not in features_dict]
+        # Get feature list from metadata (supports both basic and advanced models)
+        required_features = metadata.get('features', [
+            'amount', 'customer_total_transactions', 'customer_trust_score',
+            'customer_average_transaction', 'hour_of_day', 'day_of_week',
+            'transaction_velocity_1h', 'location_distance_km'
+        ])
         
-        if missing_features:
-            return jsonify({
-                'error': f'Missing required features: {missing_features}'
-            }), 400
+        # Create DataFrame for advanced feature engineering
+        import pandas as pd
+        df_input = pd.DataFrame([features_dict])
         
-        # Create feature vector in correct order
-        X = np.array([[features_dict[f] for f in required_features]])
+        # Engineer derived features if using advanced models (22 features)
+        if 'amount_velocity_ratio' in required_features:
+            # Fill in missing advanced features with defaults
+            df_input['transaction_velocity_24h'] = features_dict.get('transaction_velocity_24h', 1)
+            df_input['device_trust_score'] = features_dict.get('device_trust_score', 70)
+            df_input['email_age_days'] = features_dict.get('email_age_days', 100)
+            df_input['account_age_days'] = features_dict.get('account_age_days', 100)
+            df_input['failed_login_attempts'] = features_dict.get('failed_login_attempts', 0)
+            df_input['shipping_billing_match'] = features_dict.get('shipping_billing_match', 1)
+            df_input['ip_country_match'] = features_dict.get('ip_country_match', 1)
+            df_input['is_weekend'] = features_dict.get('is_weekend', 0)
+            
+            # Create engineered features (same as in training)
+            df_input['amount_velocity_ratio'] = df_input['amount'] / (df_input['transaction_velocity_24h'] + 1)
+            df_input['trust_score_combined'] = (df_input['customer_trust_score'] + df_input['device_trust_score']) / 2
+            df_input['account_email_age_ratio'] = df_input['account_age_days'] / (df_input['email_age_days'] + 1)
+            df_input['is_night_transaction'] = ((df_input['hour_of_day'] >= 22) | (df_input['hour_of_day'] <= 5)).astype(int)
+            df_input['location_risk_score'] = df_input['location_distance_km'] * (1 - df_input['ip_country_match'])
+            df_input['velocity_score'] = df_input['transaction_velocity_1h'] * 10 + df_input['transaction_velocity_24h']
+        
+        # Get features in correct order
+        X = df_input[required_features].values
         
         # Scale features
         X_scaled = scaler.transform(X)
