@@ -1,29 +1,26 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useCart } from '@/contexts/CartContext';
-import { useSimulation } from '@/contexts/SimulationContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { ArrowLeft, CreditCard, Lock } from 'lucide-react';
+import { ArrowLeft, CreditCard, Loader2, ShoppingBag } from 'lucide-react';
+import { getStripePriceId, hasStripePrice } from '@/config/stripe-products';
 
 const checkoutSchema = z.object({
-  email: z.string().email(),
-  fullName: z.string().min(3),
-  address: z.string().min(5),
-  city: z.string().min(2),
-  postalCode: z.string().min(3),
-  country: z.string().min(2),
-  cardNumber: z.string().regex(/^\d{16}$/, 'Card number must be 16 digits'),
-  cardExpiry: z.string().regex(/^\d{2}\/\d{2}$/, 'Format: MM/YY'),
-  cardCvv: z.string().regex(/^\d{3,4}$/, 'CVV must be 3-4 digits'),
+  email: z.string().trim().email({ message: 'Invalid email address' }).max(255),
+  fullName: z.string().trim().min(3, { message: 'Name must be at least 3 characters' }).max(100),
+  address: z.string().trim().min(5, { message: 'Address must be at least 5 characters' }).max(500),
+  city: z.string().trim().min(2, { message: 'City must be at least 2 characters' }).max(100),
+  postalCode: z.string().trim().min(3, { message: 'Postal code must be at least 3 characters' }).max(20),
+  country: z.string().trim().min(2, { message: 'Country must be at least 2 characters' }).max(100),
 });
 
 type CheckoutForm = z.infer<typeof checkoutSchema>;
@@ -32,7 +29,6 @@ export default function Checkout() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { items, totalPrice, clearCart } = useCart();
-  const { addTransaction, addAlert } = useSimulation();
   const [processing, setProcessing] = useState(false);
 
   const form = useForm<CheckoutForm>({
@@ -44,457 +40,206 @@ export default function Checkout() {
       city: '',
       postalCode: '',
       country: '',
-      cardNumber: '',
-      cardExpiry: '',
-      cardCvv: '',
     },
   });
 
-  const onSubmit = async (data: CheckoutForm) => {
-    if (!user) {
-      toast.error('Please login to complete checkout');
-      navigate('/login');
-      return;
-    }
+  if (items.length === 0) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <ShoppingBag className="h-16 w-16 text-muted-foreground mb-4" />
+            <h2 className="text-2xl font-bold mb-2">Your cart is empty</h2>
+            <p className="text-muted-foreground mb-6 text-center">
+              Add some items to your cart before checking out
+            </p>
+            <Button onClick={() => navigate('/shop')}>
+              Continue Shopping
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
+  const onSubmit = async (data: CheckoutForm) => {
     setProcessing(true);
 
     try {
-      // Create order
-      const { data: order, error: orderError } = await (supabase as any)
-        .from('orders')
-        .insert({
-          user_id: user.id,
-          total_amount: totalPrice,
-          status: 'pending',
-          shipping_address: `${data.address}, ${data.city}, ${data.postalCode}, ${data.country}`,
-          customer_email: data.email,
-          customer_name: data.fullName,
-        })
-        .select()
-        .single();
+      // Validate all items have Stripe prices configured
+      const invalidItems = items.filter(item => !hasStripePrice(item.product_id));
+      if (invalidItems.length > 0) {
+        toast.error('Some products are not configured for payment. Please contact support.');
+        console.error('Missing Stripe price IDs for:', invalidItems);
+        setProcessing(false);
+        return;
+      }
 
-      if (orderError) throw orderError;
-
-      // Create order items
-      const orderItems = items.map(item => ({
-        order_id: order.id,
+      // Prepare items for Stripe checkout
+      const checkoutItems = items.map(item => ({
         product_id: item.product_id,
-        quantity: item.quantity,
+        price_id: getStripePriceId(item.product_id)!,
+        quantity: item.quantity || 1,
+        name: item.name,
         price: item.price,
       }));
 
-      const { error: itemsError } = await (supabase as any)
-        .from('order_items')
-        .insert(orderItems);
+      const shippingAddress = `${data.address}, ${data.city}, ${data.postalCode}, ${data.country}`;
 
-      if (itemsError) throw itemsError;
-
-      // Check if fraud detection is enabled for this merchant
-      if (!user.merchantProfile?.fraud_detection_enabled) {
-        console.log('Fraud detection disabled, approving order');
-        await (supabase as any)
-          .from('orders')
-          .update({ status: 'completed', fraud_score: 0 })
-          .eq('id', order.id);
-        
-        clearCart();
-        toast.success('Order placed successfully!');
-        navigate('/shop');
-        return;
-      }
-
-      // Get merchant API key
-      const merchantApiKey = user.merchantProfile?.api_key;
-      if (!merchantApiKey) {
-        console.error('Merchant API key not found');
-        toast.error('Store configuration error. Please contact support.');
-        return;
-      }
-
-      // Call fraud detection edge function with proper merchant authentication
-      const transactionData = {
-        merchant_api_key: merchantApiKey,
-        amount: totalPrice,
-        currency: 'USD',
-        customer_email: data.email,
-        customer_ip: '0.0.0.0', // TODO: Get real IP from request headers
-        customer_device: navigator.userAgent,
-        customer_location: {
-          country: data.country,
-          city: data.city
-        },
-        payment_method: 'credit_card',
-        card_last4: data.cardNumber.slice(-4),
-        metadata: {
-          order_id: order.id,
-          customer_name: data.fullName,
-          billing_address: `${data.address}, ${data.city}, ${data.postalCode}, ${data.country}`,
-          shipping_address: `${data.address}, ${data.city}, ${data.postalCode}, ${data.country}`
+      // Call Stripe checkout edge function
+      const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
+        'create-checkout',
+        {
+          body: {
+            items: checkoutItems,
+            customer_email: data.email,
+            shipping_address: shippingAddress,
+          },
         }
-      };
-
-      console.log('Sending transaction for fraud analysis...');
-      const { data: fraudResult, error: fraudError } = await supabase.functions.invoke(
-        'analyze-transaction',
-        { body: transactionData }
       );
 
-      if (fraudError) {
-        console.error('❌ ML fraud detection unavailable:', fraudError);
-        toast.error('Fraud detection service unavailable. Please try again.');
+      if (checkoutError) {
+        console.error('Checkout error:', checkoutError);
+        toast.error('Failed to create checkout session. Please try again.');
+        setProcessing(false);
         return;
       }
 
-      console.log('✅ ML fraud analysis result:', fraudResult);
-
-      const fraudScore = fraudResult?.fraud_score || 0; // Already 0-100 from backend
-      const status = fraudResult?.status || 'approved';
-      const isHighRisk = fraudScore >= 70;
-
-      // Add transaction to simulation context for real-time dashboard updates
-      const transactionId = fraudResult.transaction_id || `txn_${Date.now()}`;
-      addTransaction({
-        id: transactionId,
-        customer_email: data.email,
-        amount: totalPrice,
-        currency: 'USD',
-        status: status as 'pending' | 'approved' | 'flagged' | 'blocked',
-        fraud_score: fraudScore / 100, // Convert back to 0-1 for context
-        risk_level: fraudResult.risk_level || 'low',
-        fraud_reasons: fraudResult.reasons || null,
-        created_at: new Date().toISOString(),
-        metadata: {
-          order_id: order.id,
-          card_last4: data.cardNumber.slice(-4),
-          from_checkout: true,
-          ml_model_used: fraudResult.model_used || 'unknown'
-        }
-      });
-
-      // Create fraud alert if detected by ML
-      if (isHighRisk) {
-        addAlert({
-          id: `alert_${Date.now()}`,
-          transaction_id: transactionId,
-          merchant_id: user.merchantProfile?.id || 'unknown',
-          alert_type: fraudResult.risk_level === 'critical' ? 'suspicious_pattern' : 'high_risk_score',
-          severity: fraudScore >= 85 ? 'critical' : 'high',
-          message: fraudResult.explanation?.summary || `ML detected high-risk transaction: $${totalPrice.toFixed(2)}`,
-          details: { 
-            fraud_score: fraudScore,
-            ml_model: fraudResult.model_used,
-            probability: fraudResult.probability,
-            ...fraudResult
-          },
-          is_resolved: false,
-          created_at: new Date().toISOString()
-        });
+      if (!checkoutData?.url) {
+        toast.error('Invalid checkout response. Please try again.');
+        setProcessing(false);
+        return;
       }
 
-      // Create transaction record in dashboard
-      const { data: transaction } = await supabase
-        .from('transactions')
-        .insert({
-          merchant_id: user.merchantProfile.id,
-          customer_email: data.email,
-          amount: totalPrice,
-          currency: 'USD',
-          status: status,
-          fraud_score: fraudScore / 100,
-          payment_method: 'credit_card',
-          customer_ip: '0.0.0.0',
-          metadata: { 
-            order_id: order.id,
-            card_last4: data.cardNumber.slice(-4),
-            from_checkout: true,
-            ml_model: fraudResult.model_used
-          }
-        })
-        .select()
-        .single();
-
-      // Check fraud result status
-      if (status === 'blocked') {
-        // Create fraud alert in database if available
-        if (transaction) {
-          await supabase
-            .from('fraud_alerts')
-            .insert({
-              merchant_id: user.merchantProfile.id,
-              transaction_id: transaction.id,
-              alert_type: 'payment_blocked',
-              severity: 'high',
-              message: 'Checkout payment blocked due to ML fraud detection',
-              details: fraudResult
-            });
-        }
-
-        // Update order status to blocked
-        await (supabase as any)
-          .from('orders')
-          .update({ 
-            status: 'blocked', 
-            fraud_score: fraudScore / 100 
-          })
-          .eq('id', order.id);
-
-        const explanation = fraudResult.explanation?.summary || 
-                          fraudResult.reasons?.join(', ') || 
-                          'Transaction blocked due to ML fraud detection';
-
-        toast.error(
-          <div>
-            <strong>🚨 Payment Blocked - ML Fraud Detection</strong>
-            <p className="text-sm mt-1">Fraud Score: {fraudScore}%</p>
-            <p className="text-sm">Model: {fraudResult.model_used || 'ML Ensemble'}</p>
-            <p className="text-sm mt-1">{explanation}</p>
-          </div>,
-          { duration: 10000 }
-        );
-        
+      // Clear cart and redirect to Stripe Checkout
+      clearCart();
+      toast.success('Redirecting to secure payment...');
+      
+      // Open Stripe Checkout in new tab
+      window.open(checkoutData.url, '_blank');
+      
+      // Redirect current tab to shop after short delay
+      setTimeout(() => {
         navigate('/shop');
-        return;
-      }
+      }, 1500);
 
-      // Create alert for flagged transactions
-      if (status === 'flagged') {
-        if (transaction) {
-          await supabase
-            .from('fraud_alerts')
-            .insert({
-              merchant_id: user.merchantProfile.id,
-              transaction_id: transaction.id,
-              alert_type: 'suspicious_activity',
-              severity: 'medium',
-              message: 'Checkout payment flagged for ML review',
-              details: fraudResult
-            });
-        }
-        
-        toast.warning(
-          <div>
-            <strong>⚠️  Payment Under ML Review</strong>
-            <p className="text-sm mt-1">Fraud Score: {fraudScore}%</p>
-            <p className="text-sm">Model: {fraudResult.model_used || 'ML Ensemble'}</p>
-            <p className="text-sm mt-1">Your payment is being verified by our ML system.</p>
-          </div>,
-          { duration: 8000 }
-        );
-      }
-
-      // Update order status (approved or flagged)
-      await (supabase as any)
-        .from('orders')
-        .update({ 
-          status: status === 'flagged' ? 'flagged' : 'completed',
-          fraud_score: fraudScore / 100
-        })
-        .eq('id', order.id);
-
-      if (status === 'flagged') {
-        setTimeout(() => {
-          clearCart();
-          navigate('/');
-          toast.success('Order submitted for ML review. You will be notified via email.');
-        }, 3000);
-      } else {
-        toast.success(
-          <div>
-            <strong>✅ Payment Successful - ML Verified</strong>
-            <p className="text-sm mt-1">Fraud Score: {fraudScore}% (Low Risk)</p>
-            <p className="text-sm">Model: {fraudResult.model_used || 'ML Ensemble'}</p>
-            <p className="text-sm mt-1">Thank you for your purchase!</p>
-          </div>,
-          { duration: 5000 }
-        );
-        
-        setTimeout(() => {
-          clearCart();
-          navigate('/');
-        }, 2000);
-      }
     } catch (error) {
       console.error('Checkout error:', error);
-      toast.error('Failed to process order. Please try again.');
-    } finally {
+      toast.error('An unexpected error occurred. Please try again.');
       setProcessing(false);
     }
   };
 
-  // Calculate fraud score with advanced ML-style detection
-  const calculateLocalFraudScore = (amount: number, items: any[], formData: CheckoutForm): { 
-    score: number; 
-    breakdown: { factor: string; contribution: number; reason: string }[];
-    fraudReasons: string[];
-  } => {
-    const breakdown: { factor: string; contribution: number; reason: string }[] = [];
-    const fraudReasons: string[] = [];
-    
-    // Amount-based scoring (max 40 points)
-    let amountScore = 0;
-    if (amount > 2000) { amountScore = 40; fraudReasons.push(`Very high amount: $${amount.toFixed(2)}`); }
-    else if (amount > 1000) { amountScore = 25; fraudReasons.push(`High amount: $${amount.toFixed(2)}`); }
-    else if (amount > 500) { amountScore = 15; }
-    else if (amount > 200) { amountScore = 5; }
-    if (amountScore > 0) breakdown.push({ factor: 'Transaction Amount', contribution: amountScore, reason: `$${amount.toFixed(2)}` });
-    
-    // Quantity-based scoring (max 35 points)
-    const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-    let quantityScore = 0;
-    if (totalQuantity > 20) { quantityScore = 35; fraudReasons.push(`Abnormally high quantity: ${totalQuantity} items`); }
-    else if (totalQuantity > 10) { quantityScore = 20; fraudReasons.push(`High quantity: ${totalQuantity} items`); }
-    else if (totalQuantity > 5) { quantityScore = 10; }
-    if (quantityScore > 0) breakdown.push({ factor: 'Item Quantity', contribution: quantityScore, reason: `${totalQuantity} items` });
-    
-    // Velocity check (max 25 points) - check localStorage for recent transactions
-    let velocityScore = 0;
-    const recentTxns = JSON.parse(localStorage.getItem('simulated_transactions') || '[]');
-    const last10Min = recentTxns.filter((t: any) => {
-      const txTime = new Date(t.created_at).getTime();
-      const now = Date.now();
-      return (now - txTime) < 10 * 60 * 1000; // 10 minutes
-    });
-    if (last10Min.length >= 3) { 
-      velocityScore = 25; 
-      fraudReasons.push(`Velocity abuse: ${last10Min.length} transactions in 10 minutes`);
-      breakdown.push({ factor: 'Velocity Check', contribution: velocityScore, reason: `${last10Min.length} recent txns` });
-    } else if (last10Min.length >= 2) {
-      velocityScore = 12;
-      breakdown.push({ factor: 'Velocity Check', contribution: velocityScore, reason: `${last10Min.length} recent txns` });
-    }
-    
-    // Geolocation mismatch (max 20 points) - simulate checking if country from formData doesn't match IP
-    let geoScore = 0;
-    const suspiciousCountries = ['Russia', 'Nigeria', 'China', 'Vietnam'];
-    if (suspiciousCountries.includes(formData.country)) {
-      geoScore = 20;
-      fraudReasons.push(`High-risk country: ${formData.country}`);
-      breakdown.push({ factor: 'Geolocation Risk', contribution: geoScore, reason: `${formData.country}` });
-    }
-    
-    // Customer risk profile (max 15 points) - first-time vs returning customer
-    let profileScore = 0;
-    const customerHistory = recentTxns.filter((t: any) => t.customer_email === formData.email);
-    if (customerHistory.length === 0) {
-      profileScore = 15;
-      fraudReasons.push('First-time customer with no purchase history');
-      breakdown.push({ factor: 'Customer Profile', contribution: profileScore, reason: 'First-time buyer' });
-    } else if (customerHistory.length === 1) {
-      profileScore = 8;
-      breakdown.push({ factor: 'Customer Profile', contribution: profileScore, reason: 'New customer' });
-    } else {
-      // Returning customer with good history reduces risk
-      profileScore = -5;
-      breakdown.push({ factor: 'Customer Profile', contribution: 0, reason: 'Trusted customer' });
-    }
-    
-    // Time pattern detection (max 15 points) - suspicious late-night hours
-    let timeScore = 0;
-    const hour = new Date().getHours();
-    if (hour >= 2 && hour <= 6) {
-      timeScore = 15;
-      fraudReasons.push(`Suspicious time: ${hour}:00 (late night)`);
-      breakdown.push({ factor: 'Time Pattern', contribution: timeScore, reason: `${hour}:00 late night` });
-    } else if (hour >= 1 && hour <= 7) {
-      timeScore = 8;
-      breakdown.push({ factor: 'Time Pattern', contribution: timeScore, reason: `${hour}:00 odd hours` });
-    }
-    
-    // Shipping vs Billing mismatch (max 20 points)
-    let addressScore = 0;
-    // Simple check: if city differs, flag it
-    const shippingCity = formData.city.toLowerCase().trim();
-    const billingCity = formData.city.toLowerCase().trim(); // In real scenario, you'd have separate billing city
-    // Simulate: if address contains "PO Box" or "Parcel Locker" it's suspicious
-    if (formData.address.toLowerCase().includes('po box') || formData.address.toLowerCase().includes('parcel')) {
-      addressScore = 20;
-      fraudReasons.push('Shipping to PO Box or parcel locker');
-      breakdown.push({ factor: 'Address Mismatch', contribution: addressScore, reason: 'PO Box delivery' });
-    } else if (formData.country !== 'USA' && formData.country !== 'United States') {
-      addressScore = 10;
-      breakdown.push({ factor: 'Address Mismatch', contribution: addressScore, reason: 'International shipping' });
-    }
-    
-    // Card pattern check (max 15 points)
-    let cardScore = 0;
-    if (formData.cardNumber.startsWith('4111') || formData.cardNumber.startsWith('5555')) {
-      cardScore = 15;
-      fraudReasons.push('Test card pattern detected');
-      breakdown.push({ factor: 'Card Validation', contribution: cardScore, reason: 'Test card detected' });
-    }
-    
-    // Average item price anomaly (max 10 points)
-    let priceScore = 0;
-    const avgItemPrice = amount / totalQuantity;
-    if (avgItemPrice > 500) {
-      priceScore = 10;
-      breakdown.push({ factor: 'Price Anomaly', contribution: priceScore, reason: `Avg $${avgItemPrice.toFixed(0)}/item` });
-    }
-    
-    const totalScore = Math.max(0, Math.min(100, Math.round(
-      amountScore + quantityScore + velocityScore + geoScore + Math.max(0, profileScore) + 
-      timeScore + addressScore + cardScore + priceScore
-    )));
-    
-    return { 
-      score: totalScore, 
-      breakdown: breakdown.sort((a, b) => b.contribution - a.contribution),
-      fraudReasons: fraudReasons.length > 0 ? fraudReasons : ['ML model indicates low risk']
-    };
-  };
-
-  if (items.length === 0) {
-    navigate('/cart');
-    return null;
-  }
-
   return (
-    <div className="container mx-auto px-4 py-8">
-      <Button
-        variant="ghost"
-        onClick={() => navigate('/cart')}
-        className="mb-6"
-      >
-        <ArrowLeft className="mr-2 h-4 w-4" />
-        Back to Cart
-      </Button>
+    <div className="min-h-screen bg-background py-8">
+      <div className="container max-w-4xl mx-auto px-4">
+        <div className="mb-6">
+          <Link to="/cart">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Cart
+            </Button>
+          </Link>
+        </div>
 
-      <div className="grid lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2">
+        <div className="grid gap-8 md:grid-cols-2">
+          {/* Checkout Form */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Lock className="h-5 w-5" />
+                <CreditCard className="h-5 w-5" />
                 Secure Checkout
               </CardTitle>
             </CardHeader>
             <CardContent>
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                  <div className="space-y-4">
-                    <h3 className="font-semibold text-lg">Contact Information</h3>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="email" 
+                            placeholder="your@email.com" 
+                            {...field} 
+                            disabled={processing}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="fullName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Full Name</FormLabel>
+                        <FormControl>
+                          <Input 
+                            placeholder="John Doe" 
+                            {...field} 
+                            disabled={processing}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="address"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Street Address</FormLabel>
+                        <FormControl>
+                          <Input 
+                            placeholder="123 Main St, Apt 4" 
+                            {...field} 
+                            disabled={processing}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
-                      name="email"
+                      name="city"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Email</FormLabel>
+                          <FormLabel>City</FormLabel>
                           <FormControl>
-                            <Input {...field} type="email" />
+                            <Input 
+                              placeholder="New York" 
+                              {...field} 
+                              disabled={processing}
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
+
                     <FormField
                       control={form.control}
-                      name="fullName"
+                      name="postalCode"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Full Name</FormLabel>
+                          <FormLabel>Postal Code</FormLabel>
                           <FormControl>
-                            <Input {...field} />
+                            <Input 
+                              placeholder="10001" 
+                              {...field} 
+                              disabled={processing}
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -502,144 +247,91 @@ export default function Checkout() {
                     />
                   </div>
 
-                  <div className="space-y-4">
-                    <h3 className="font-semibold text-lg">Shipping Address</h3>
-                    <FormField
-                      control={form.control}
-                      name="address"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Street Address</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="city"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>City</FormLabel>
-                            <FormControl>
-                              <Input {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="postalCode"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Postal Code</FormLabel>
-                            <FormControl>
-                              <Input {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                    <FormField
-                      control={form.control}
-                      name="country"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Country</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
+                  <FormField
+                    control={form.control}
+                    name="country"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Country</FormLabel>
+                        <FormControl>
+                          <Input 
+                            placeholder="United States" 
+                            {...field} 
+                            disabled={processing}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                  <div className="space-y-4">
-                    <h3 className="font-semibold text-lg flex items-center gap-2">
-                      <CreditCard className="h-5 w-5" />
-                      Payment Information
-                    </h3>
-                    <FormField
-                      control={form.control}
-                      name="cardNumber"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Card Number</FormLabel>
-                          <FormControl>
-                            <Input {...field} placeholder="1234567890123456" maxLength={16} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="cardExpiry"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Expiry (MM/YY)</FormLabel>
-                            <FormControl>
-                              <Input {...field} placeholder="12/25" maxLength={5} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="cardCvv"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>CVV</FormLabel>
-                            <FormControl>
-                              <Input {...field} placeholder="123" maxLength={4} type="password" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </div>
-
-                  <Button
-                    type="submit"
+                  <Button 
+                    type="submit" 
+                    className="w-full" 
                     size="lg"
-                    className="w-full"
                     disabled={processing}
                   >
-                    {processing ? 'Processing...' : `Pay $${totalPrice.toFixed(2)}`}
+                    {processing ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="mr-2 h-4 w-4" />
+                        Proceed to Payment
+                      </>
+                    )}
                   </Button>
+
+                  <p className="text-xs text-center text-muted-foreground">
+                    Powered by Stripe. Your payment information is secure.
+                  </p>
                 </form>
               </Form>
             </CardContent>
           </Card>
-        </div>
 
-        <div>
-          <Card className="sticky top-4">
-            <CardHeader>
-              <CardTitle>Order Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {items.map(item => (
-                <div key={item.id} className="flex justify-between text-sm">
-                  <span>{item.quantity}x {item.name}</span>
-                  <span>${(item.price * item.quantity).toFixed(2)}</span>
+          {/* Order Summary */}
+          <div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Order Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {items.map((item) => (
+                  <div key={item.id} className="flex justify-between items-center">
+                    <div className="flex-1">
+                      <p className="font-medium">{item.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Qty: {item.quantity || 1}
+                      </p>
+                    </div>
+                    <p className="font-semibold">
+                      ${(item.price * (item.quantity || 1)).toFixed(2)}
+                    </p>
+                  </div>
+                ))}
+
+                <div className="border-t pt-4">
+                  <div className="flex justify-between items-center text-lg font-bold">
+                    <span>Total</span>
+                    <span>${totalPrice.toFixed(2)}</span>
+                  </div>
                 </div>
-              ))}
-              <div className="border-t pt-4 flex justify-between text-lg font-bold">
-                <span>Total</span>
-                <span className="text-primary">${totalPrice.toFixed(2)}</span>
-              </div>
-            </CardContent>
-          </Card>
+
+                <div className="bg-muted p-4 rounded-lg space-y-2 text-sm">
+                  <p className="font-semibold">What happens next?</p>
+                  <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                    <li>You'll be redirected to Stripe's secure payment page</li>
+                    <li>Enter your card details safely</li>
+                    <li>Your order will be processed automatically</li>
+                    <li>Receive a confirmation email</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>
