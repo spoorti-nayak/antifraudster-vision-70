@@ -11,7 +11,6 @@ import {
 import { useVendor } from "@/contexts/VendorContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useSimulation } from "@/contexts/SimulationContext";
 
 interface MetricCardProps {
   title: string;
@@ -55,7 +54,6 @@ const MetricCard = ({ title, value, change, changeType, icon, gradient }: Metric
 const OverviewCards = () => {
   const { isConnected } = useVendor();
   const { user } = useAuth();
-  const { transactions: simulatedTransactions } = useSimulation();
   const [metrics, setMetrics] = useState({
     totalTransactions: 0,
     fraudDetected: 0,
@@ -63,12 +61,12 @@ const OverviewCards = () => {
     avgFraudProbability: 0
   });
 
-  // Load and merge metrics from database and simulation context
+  // Load only real database data
   useEffect(() => {
     const loadMetrics = async () => {
-      let dbTransactions: any[] = [];
+      let allTransactions: any[] = [];
       
-      // Try to load from database if user is authenticated
+      // Only load from database if user is authenticated
       if (user?.merchantProfile?.id) {
         try {
           const { data, error } = await supabase
@@ -77,15 +75,12 @@ const OverviewCards = () => {
             .eq('merchant_id', user.merchantProfile.id);
 
           if (!error && data) {
-            dbTransactions = data;
+            allTransactions = data;
           }
         } catch (error) {
           console.error('Error loading metrics from database:', error);
         }
       }
-
-      // Merge database and simulated transactions
-      const allTransactions = [...dbTransactions, ...simulatedTransactions];
 
       const total = allTransactions.length;
       const fraudulent = allTransactions.filter(t => t.status === 'flagged' || t.status === 'blocked').length;
@@ -126,7 +121,7 @@ const OverviewCards = () => {
         supabase.removeChannel(channel);
       };
     }
-  }, [user?.merchantProfile?.id, simulatedTransactions]);
+  }, [user?.merchantProfile?.id]);
 
   const fraudRate = metrics.totalTransactions > 0 ? ((metrics.fraudDetected / metrics.totalTransactions) * 100).toFixed(2) : "0.00";
 
