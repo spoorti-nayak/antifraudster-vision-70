@@ -80,7 +80,7 @@ if not os.path.exists('datasets/fraud_transactions_advanced.csv'):
     print("⚠️  No advanced dataset found. Generating enhanced synthetic data...")
     
     np.random.seed(42)
-    n_samples = 200000  # Huge dataset for production-level accuracy
+    n_samples = 50000  # Larger dataset for better training
     
     # Normal transactions (92% - realistic fraud rate)
     n_normal = int(n_samples * 0.92)

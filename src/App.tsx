@@ -26,8 +26,6 @@ import Cart from "./pages/Cart";
 import Checkout from "./pages/Checkout";
 import StoreSettings from "./pages/StoreSettings";
 import TransactionSimulator from "./pages/TransactionSimulator";
-import PaymentSuccess from "./pages/PaymentSuccess";
-import PaymentCanceled from "./pages/PaymentCanceled";
 
 const queryClient = new QueryClient();
 
@@ -63,8 +61,6 @@ const App = () => (
                 <Route path="/cart" element={<Cart />} />
                 <Route path="/checkout" element={<Checkout />} />
                 <Route path="/store-settings" element={<StoreSettings />} />
-                <Route path="/payment-success" element={<PaymentSuccess />} />
-                <Route path="/payment-canceled" element={<PaymentCanceled />} />
                 
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
