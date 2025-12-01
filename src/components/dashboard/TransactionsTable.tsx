@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useSimulation } from "@/contexts/SimulationContext";
 
 interface Transaction {
   id: string;
@@ -85,7 +84,6 @@ export interface TransactionsTableRef {
 
 const TransactionsTable = forwardRef<TransactionsTableRef, TransactionsTableProps>(({ searchQuery, hideToolbar }, ref) => {
   const { user } = useAuth();
-  const { transactions: simulatedTransactions } = useSimulation();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -98,6 +96,7 @@ const TransactionsTable = forwardRef<TransactionsTableRef, TransactionsTableProp
   useEffect(() => {
     if (!user?.merchantProfile?.id) {
       setIsLoading(false);
+      setTransactions([]);
       return;
     }
 
@@ -111,12 +110,10 @@ const TransactionsTable = forwardRef<TransactionsTableRef, TransactionsTableProp
         .limit(100);
 
       if (error) {
-        console.warn('Backend unavailable, using simulated transactions:', error);
-        // Use simulated transactions from context
-        setTransactions(simulatedTransactions as any);
+        console.error('Error loading transactions:', error);
+        setTransactions([]);
       } else {
-        // Merge backend and simulated transactions
-        setTransactions([...simulatedTransactions as any, ...data || []]);
+        setTransactions(data || []);
       }
       setIsLoading(false);
     };
@@ -149,7 +146,7 @@ const TransactionsTable = forwardRef<TransactionsTableRef, TransactionsTableProp
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.merchantProfile?.id, simulatedTransactions]);
+  }, [user?.merchantProfile?.id]);
 
   useImperativeHandle(ref, () => ({
     export: exportTransactions,
