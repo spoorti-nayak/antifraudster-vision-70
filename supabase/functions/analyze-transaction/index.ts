@@ -191,17 +191,31 @@ serve(async (req) => {
     let mlPrediction = null;
     try {
       const mlFeatures = extractFeatures(requestData, customerProfile);
-      const { data: mlData } = await supabaseClient.functions.invoke('ml-predict', {
+      console.log('🤖 Calling ML prediction API...');
+      const { data: mlData, error: mlError } = await supabaseClient.functions.invoke('ml-predict', {
         body: { features: mlFeatures }
       });
-      if (mlData) {
+      if (mlData && !mlError) {
         mlPrediction = mlData;
-        console.log('ML prediction received:', mlPrediction);
+        if (mlData.model_used && mlData.model_used !== 'rule_based_fallback') {
+          console.log('✅ ML prediction received from trained models');
+          console.log('🎯 Model used:', mlData.model_used);
+          console.log('📊 ML fraud score:', mlData.fraud_score);
+          console.log('💡 XAI Explanation:', mlData.explanation);
+          console.log('📈 Feature importance:', mlData.feature_importance);
+        } else {
+          console.log('⚠️ Using rule-based fallback (ML API unavailable)');
+          console.log('💡 To use ML models: python ml_models/api_server.py');
+        }
         // ML prediction can be used to adjust final decision in future
         // For now, we use rule-based scoring but log ML results
+      } else {
+        throw mlError || new Error('ML prediction returned no data');
       }
     } catch (mlError) {
-      console.warn('ML prediction unavailable, using rule-based only:', mlError);
+      console.warn('⚠️ ML prediction unavailable, using rule-based detection only');
+      console.warn('Error:', mlError.message);
+      console.warn('💡 To enable ML models: python ml_models/api_server.py');
     }
 
     // 10. Save ML training data
