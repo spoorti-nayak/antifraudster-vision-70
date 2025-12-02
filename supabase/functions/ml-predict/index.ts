@@ -28,11 +28,12 @@ serve(async (req) => {
     
     console.log('ML Prediction request:', features);
 
-    // Option 1: Call external Python API (if ml_models/api_server.py is running)
-    // Uncomment this when you have Python API server running:
-    /*
+    // Option 1: Call external Python API (ml_models/api_server.py)
+    // Default to localhost:8000 or use ML_API_URL environment variable
     try {
       const pythonApiUrl = Deno.env.get('ML_API_URL') || 'http://localhost:8000';
+      console.log(`Calling ML API at: ${pythonApiUrl}/predict`);
+      
       const mlResponse = await fetch(`${pythonApiUrl}/predict`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -41,16 +42,21 @@ serve(async (req) => {
       
       if (mlResponse.ok) {
         const mlPrediction = await mlResponse.json();
-        console.log('ML prediction received:', mlPrediction);
+        console.log('✅ ML prediction with XAI received:', mlPrediction);
         return new Response(
           JSON.stringify(mlPrediction),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
+      } else {
+        const errorText = await mlResponse.text();
+        console.warn('ML API returned error:', mlResponse.status, errorText);
+        throw new Error(`ML API error: ${mlResponse.status}`);
       }
     } catch (mlError) {
-      console.warn('Python ML API unavailable, using fallback:', mlError.message);
+      console.warn('⚠️ Python ML API unavailable, using rule-based fallback');
+      console.warn('Error:', mlError.message);
+      console.warn('Make sure to run: python ml_models/api_server.py');
     }
-    */
 
     // Option 2: Fallback to rule-based scoring (temporary until ML models are deployed)
     const fraudScore = calculateRuleBasedScore(features);

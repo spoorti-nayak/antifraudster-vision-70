@@ -104,7 +104,7 @@ export default function ProductDetail() {
             </p>
           </div>
 
-          <p className="text-3xl font-bold text-primary">${product.price}</p>
+          <p className="text-3xl font-bold text-primary">₹{product.price}</p>
 
           <p className="text-muted-foreground leading-relaxed">{product.description}</p>
 

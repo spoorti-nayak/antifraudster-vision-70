@@ -116,7 +116,7 @@ export default function Checkout() {
       const transactionData = {
         merchant_api_key: merchantApiKey,
         amount: totalPrice,
-        currency: 'USD',
+        currency: 'INR',
         customer_email: data.email,
         customer_ip: '0.0.0.0', // TODO: Get real IP from request headers
         customer_device: navigator.userAgent,
@@ -155,7 +155,7 @@ export default function Checkout() {
           id: `txn_${Date.now()}`,
           customer_email: data.email,
           amount: totalPrice,
-          currency: 'USD',
+          currency: 'INR',
           status: status,
           fraud_score: fraudScore,
           risk_level: riskLevel,
@@ -235,7 +235,7 @@ export default function Checkout() {
         id: `txn_${Date.now()}`,
         customer_email: data.email,
         amount: totalPrice,
-        currency: 'USD',
+        currency: 'INR',
         status: status as 'pending' | 'approved' | 'flagged' | 'blocked',
         fraud_score: fraudScore,
         risk_level: fraudResult?.risk_level || 'low',
@@ -256,7 +256,7 @@ export default function Checkout() {
           merchant_id: user.merchantProfile.id,
           customer_email: data.email,
           amount: totalPrice,
-          currency: 'USD',
+          currency: 'INR',
           status: status,
           fraud_score: fraudScore,
           payment_method: 'credit_card',
@@ -386,7 +386,7 @@ export default function Checkout() {
     else if (amount > 1000) { amountScore = 25; fraudReasons.push(`High amount: $${amount.toFixed(2)}`); }
     else if (amount > 500) { amountScore = 15; }
     else if (amount > 200) { amountScore = 5; }
-    if (amountScore > 0) breakdown.push({ factor: 'Transaction Amount', contribution: amountScore, reason: `$${amount.toFixed(2)}` });
+    if (amountScore > 0) breakdown.push({ factor: 'Transaction Amount', contribution: amountScore, reason: `₹${amount.toFixed(2)}` });
     
     // Quantity-based scoring (max 35 points)
     const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -478,7 +478,7 @@ export default function Checkout() {
     const avgItemPrice = amount / totalQuantity;
     if (avgItemPrice > 500) {
       priceScore = 10;
-      breakdown.push({ factor: 'Price Anomaly', contribution: priceScore, reason: `Avg $${avgItemPrice.toFixed(0)}/item` });
+      breakdown.push({ factor: 'Price Anomaly', contribution: priceScore, reason: `Avg ₹${avgItemPrice.toFixed(0)}/item` });
     }
     
     const totalScore = Math.max(0, Math.min(100, Math.round(
@@ -663,7 +663,7 @@ export default function Checkout() {
                     className="w-full"
                     disabled={processing}
                   >
-                    {processing ? 'Processing...' : `Pay $${totalPrice.toFixed(2)}`}
+                    {processing ? 'Processing...' : `Pay ₹${totalPrice.toFixed(2)}`}
                   </Button>
                 </form>
               </Form>
@@ -680,12 +680,12 @@ export default function Checkout() {
               {items.map(item => (
                 <div key={item.id} className="flex justify-between text-sm">
                   <span>{item.quantity}x {item.name}</span>
-                  <span>${(item.price * item.quantity).toFixed(2)}</span>
+                  <span>₹{(item.price * item.quantity).toFixed(2)}</span>
                 </div>
               ))}
               <div className="border-t pt-4 flex justify-between text-lg font-bold">
                 <span>Total</span>
-                <span className="text-primary">${totalPrice.toFixed(2)}</span>
+                <span className="text-primary">₹{totalPrice.toFixed(2)}</span>
               </div>
             </CardContent>
           </Card>

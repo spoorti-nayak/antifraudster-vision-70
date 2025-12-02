@@ -151,7 +151,7 @@ export default function Shop() {
             <CardContent className="flex-grow p-4">
               <CardTitle className="text-lg mb-2">{product.name}</CardTitle>
               <p className="text-sm text-muted-foreground mb-2">{product.description}</p>
-              <p className="text-2xl font-bold text-primary">${product.price}</p>
+              <p className="text-2xl font-bold text-primary">₹{product.price}</p>
               <p className="text-sm text-muted-foreground mt-1">
                 {product.stock > 0 ? `${product.stock} in stock` : 'Out of stock'}
               </p>
