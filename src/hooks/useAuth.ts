@@ -86,18 +86,15 @@ export const useAuthProvider = (): AuthContextType => {
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
-          setTimeout(() => {
-            loadMerchantProfile(session.user.id, session.user.email!).then(merchantProfile => {
-              setUser({
-                id: session.user.id,
-                email: session.user.email!,
-                firstName: merchantProfile?.first_name || '',
-                lastName: merchantProfile?.last_name || '',
-                company: merchantProfile?.company_name || '',
-                merchantProfile: merchantProfile || undefined,
-              });
-            });
-          }, 0);
+          const merchantProfile = await loadMerchantProfile(session.user.id, session.user.email!);
+          setUser({
+            id: session.user.id,
+            email: session.user.email!,
+            firstName: merchantProfile?.first_name || '',
+            lastName: merchantProfile?.last_name || '',
+            company: merchantProfile?.company_name || '',
+            merchantProfile: merchantProfile || undefined,
+          });
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
@@ -108,24 +105,23 @@ export const useAuthProvider = (): AuthContextType => {
 
     initAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
+        const merchantProfile = await loadMerchantProfile(session.user.id, session.user.email!);
+        setUser({
+          id: session.user.id,
+          email: session.user.email!,
+          firstName: merchantProfile?.first_name || '',
+          lastName: merchantProfile?.last_name || '',
+          company: merchantProfile?.company_name || '',
+          merchantProfile: merchantProfile || undefined,
+        });
         setIsLoading(false);
-        
-        setTimeout(() => {
-          loadMerchantProfile(session.user.id, session.user.email!).then(merchantProfile => {
-            setUser({
-              id: session.user.id,
-              email: session.user.email!,
-              firstName: merchantProfile?.first_name || '',
-              lastName: merchantProfile?.last_name || '',
-              company: merchantProfile?.company_name || '',
-              merchantProfile: merchantProfile || undefined,
-            });
-          });
-        }, 0);
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
+        // Clear local storage cache on logout
+        localStorage.removeItem('simulated_transactions');
+        localStorage.removeItem('simulated_alerts');
         setIsLoading(false);
       }
     });
@@ -138,6 +134,11 @@ export const useAuthProvider = (): AuthContextType => {
   const login = async (email: string, password: string) => {
     try {
       setIsLoading(true);
+      
+      // Clear any cached data from previous session
+      localStorage.removeItem('simulated_transactions');
+      localStorage.removeItem('simulated_alerts');
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -165,6 +166,11 @@ export const useAuthProvider = (): AuthContextType => {
   const register = async (userData: RegisterData) => {
     try {
       setIsLoading(true);
+      
+      // Clear any existing cached data
+      localStorage.removeItem('simulated_transactions');
+      localStorage.removeItem('simulated_alerts');
+      
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: userData.email,
         password: userData.password,
