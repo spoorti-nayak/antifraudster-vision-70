@@ -58,6 +58,7 @@ export const useAuth = () => {
 export const useAuthProvider = (): AuthContextType => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadMerchantProfile = async (userId: string, email: string) => {
@@ -87,6 +88,7 @@ export const useAuthProvider = (): AuthContextType => {
         
         if (session?.user) {
           const merchantProfile = await loadMerchantProfile(session.user.id, session.user.email!);
+          setSession(session);
           setUser({
             id: session.user.id,
             email: session.user.email!,
@@ -95,6 +97,8 @@ export const useAuthProvider = (): AuthContextType => {
             company: merchantProfile?.company_name || '',
             merchantProfile: merchantProfile || undefined,
           });
+          // Store user ID in localStorage for data isolation
+          localStorage.setItem('simulated_user_id', session.user.id);
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
@@ -108,6 +112,7 @@ export const useAuthProvider = (): AuthContextType => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
         const merchantProfile = await loadMerchantProfile(session.user.id, session.user.email!);
+        setSession(session);
         setUser({
           id: session.user.id,
           email: session.user.email!,
@@ -116,12 +121,14 @@ export const useAuthProvider = (): AuthContextType => {
           company: merchantProfile?.company_name || '',
           merchantProfile: merchantProfile || undefined,
         });
+        // Store user ID in localStorage for data isolation
+        localStorage.setItem('simulated_user_id', session.user.id);
         setIsLoading(false);
       } else if (event === 'SIGNED_OUT') {
+        setSession(null);
         setUser(null);
-        // Clear local storage cache on logout
-        localStorage.removeItem('simulated_transactions');
-        localStorage.removeItem('simulated_alerts');
+        // Clear ALL local storage on logout
+        localStorage.clear();
         setIsLoading(false);
       }
     });
@@ -132,12 +139,11 @@ export const useAuthProvider = (): AuthContextType => {
   }, []);
 
   const login = async (email: string, password: string) => {
+    setIsLoading(true);
+    
     try {
-      setIsLoading(true);
-      
-      // Clear any cached data from previous session
-      localStorage.removeItem('simulated_transactions');
-      localStorage.removeItem('simulated_alerts');
+      // Clear ALL cached data from previous session
+      localStorage.clear();
       
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -145,31 +151,38 @@ export const useAuthProvider = (): AuthContextType => {
       });
 
       if (error) {
+        setIsLoading(false);
         throw new Error(error.message || 'Login failed. Please check your credentials.');
       }
 
       if (data.user) {
-        // Auth state change will handle user state and navigation
-        // Just wait a moment for the session to be established
-        await new Promise(resolve => setTimeout(resolve, 500));
+        const merchantProfile = await loadMerchantProfile(data.user.id, data.user.email!);
+        setSession(data.session);
+        setUser({
+          id: data.user.id,
+          email: data.user.email!,
+          firstName: merchantProfile?.first_name || '',
+          lastName: merchantProfile?.last_name || '',
+          company: merchantProfile?.company_name || '',
+          merchantProfile: merchantProfile || undefined,
+        });
+        setIsLoading(false);
         navigate('/dashboard');
       }
     } catch (error: any) {
+      setIsLoading(false);
       console.error('Login error:', error);
       const errorMessage = error?.message || error?.error_description || 'Login failed. The authentication service is temporarily unavailable. Please try again.';
       throw new Error(errorMessage);
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const register = async (userData: RegisterData) => {
+    setIsLoading(true);
+    
     try {
-      setIsLoading(true);
-      
-      // Clear any existing cached data
-      localStorage.removeItem('simulated_transactions');
-      localStorage.removeItem('simulated_alerts');
+      // Clear ALL existing cached data
+      localStorage.clear();
       
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: userData.email,
@@ -184,6 +197,7 @@ export const useAuthProvider = (): AuthContextType => {
       });
 
       if (authError) {
+        setIsLoading(false);
         throw new Error(authError.message || 'Registration failed. Please try again.');
       }
 
@@ -200,28 +214,39 @@ export const useAuthProvider = (): AuthContextType => {
           });
 
         if (profileError) {
+          setIsLoading(false);
           console.error('Profile creation error:', profileError);
           throw new Error('Failed to create merchant profile. Please contact support.');
         }
 
-        // Auth state change will handle user state and navigation
-        // Wait for session to be established before navigating
-        await new Promise(resolve => setTimeout(resolve, 500));
+        const merchantProfile = await loadMerchantProfile(authData.user.id, authData.user.email!);
+        setSession(authData.session);
+        setUser({
+          id: authData.user.id,
+          email: authData.user.email!,
+          firstName: merchantProfile?.first_name || '',
+          lastName: merchantProfile?.last_name || '',
+          company: merchantProfile?.company_name || '',
+          merchantProfile: merchantProfile || undefined,
+        });
+        setIsLoading(false);
         navigate('/dashboard');
       }
     } catch (error: any) {
+      setIsLoading(false);
       console.error('Registration error:', error);
       const errorMessage = error?.message || error?.error_description || 'Registration failed. The authentication service is temporarily unavailable. Please try again in a few moments.';
       throw new Error(errorMessage);
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const logout = async () => {
     try {
+      // Clear ALL local data on logout
+      localStorage.clear();
       await supabase.auth.signOut();
       setUser(null);
+      setSession(null);
       navigate('/login');
     } catch (error) {
       console.error('Logout error:', error);

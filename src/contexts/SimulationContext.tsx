@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 interface Transaction {
   id: string;
@@ -35,20 +35,54 @@ interface SimulationContextType {
 const SimulationContext = createContext<SimulationContextType | undefined>(undefined);
 
 export const SimulationProvider = ({ children }: { children: ReactNode }) => {
+  const [userId, setUserId] = useState<string | null>(() => {
+    return localStorage.getItem('simulated_user_id');
+  });
+  
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    const savedUserId = localStorage.getItem('simulated_user_id');
     const saved = localStorage.getItem('simulated_transactions');
-    return saved ? JSON.parse(saved) : [];
+    return saved && savedUserId ? JSON.parse(saved) : [];
   });
   
   const [alerts, setAlerts] = useState<FraudAlert[]>(() => {
+    const savedUserId = localStorage.getItem('simulated_user_id');
     const saved = localStorage.getItem('simulated_alerts');
-    return saved ? JSON.parse(saved) : [];
+    return saved && savedUserId ? JSON.parse(saved) : [];
   });
+
+  // Monitor user ID changes and clear data if user changes
+  useEffect(() => {
+    const checkUserId = () => {
+      const currentUserId = localStorage.getItem('simulated_user_id');
+      if (currentUserId !== userId) {
+        setUserId(currentUserId);
+        if (!currentUserId) {
+          // User logged out - clear all data
+          setTransactions([]);
+          setAlerts([]);
+        } else if (currentUserId && currentUserId !== userId) {
+          // Different user - reload their data
+          const savedTransactions = localStorage.getItem('simulated_transactions');
+          const savedAlerts = localStorage.getItem('simulated_alerts');
+          setTransactions(savedTransactions ? JSON.parse(savedTransactions) : []);
+          setAlerts(savedAlerts ? JSON.parse(savedAlerts) : []);
+        }
+      }
+    };
+
+    // Check on mount and set up interval
+    checkUserId();
+    const interval = setInterval(checkUserId, 1000);
+    return () => clearInterval(interval);
+  }, [userId]);
 
   const addTransaction = (transaction: Transaction) => {
     setTransactions(prev => {
       const updated = [transaction, ...prev];
-      localStorage.setItem('simulated_transactions', JSON.stringify(updated));
+      if (userId) {
+        localStorage.setItem('simulated_transactions', JSON.stringify(updated));
+      }
       return updated;
     });
   };
@@ -56,7 +90,9 @@ export const SimulationProvider = ({ children }: { children: ReactNode }) => {
   const addAlert = (alert: FraudAlert) => {
     setAlerts(prev => {
       const updated = [alert, ...prev];
-      localStorage.setItem('simulated_alerts', JSON.stringify(updated));
+      if (userId) {
+        localStorage.setItem('simulated_alerts', JSON.stringify(updated));
+      }
       return updated;
     });
   };
