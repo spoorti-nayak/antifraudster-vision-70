@@ -23,16 +23,14 @@ const Login = () => {
     
     try {
       await login(email, password);
-      // Navigate after successful login
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 100);
+      navigate('/dashboard');
     } catch (error: any) {
       toast({
         title: "Login Failed",
         description: error.message || "Invalid email or password",
         variant: "destructive"
       });
+    } finally {
       setIsLoading(false);
     }
   };
