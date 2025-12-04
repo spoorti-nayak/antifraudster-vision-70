@@ -380,13 +380,14 @@ export default function Checkout() {
     const breakdown: { factor: string; contribution: number; reason: string }[] = [];
     const fraudReasons: string[] = [];
     
-    // Amount-based scoring (max 40 points)
+    // Amount-based scoring (max 40 points) - thresholds in INR
+    // Typical INR thresholds: ₹150,000+ very high, ₹75,000+ high, ₹40,000+ medium, ₹15,000+ low
     let amountScore = 0;
-    if (amount > 2000) { amountScore = 40; fraudReasons.push(`Very high amount: $${amount.toFixed(2)}`); }
-    else if (amount > 1000) { amountScore = 25; fraudReasons.push(`High amount: $${amount.toFixed(2)}`); }
-    else if (amount > 500) { amountScore = 15; }
-    else if (amount > 200) { amountScore = 5; }
-    if (amountScore > 0) breakdown.push({ factor: 'Transaction Amount', contribution: amountScore, reason: `₹${amount.toFixed(2)}` });
+    if (amount > 150000) { amountScore = 40; fraudReasons.push(`Very high amount: ₹${amount.toLocaleString('en-IN')}`); }
+    else if (amount > 75000) { amountScore = 25; fraudReasons.push(`High amount: ₹${amount.toLocaleString('en-IN')}`); }
+    else if (amount > 40000) { amountScore = 15; }
+    else if (amount > 15000) { amountScore = 5; }
+    if (amountScore > 0) breakdown.push({ factor: 'Transaction Amount', contribution: amountScore, reason: `₹${amount.toLocaleString('en-IN')}` });
     
     // Quantity-based scoring (max 35 points)
     const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
