@@ -92,11 +92,12 @@ serve(async (req) => {
 });
 
 // Rule-based scoring fallback (until ML models are integrated)
+// NOTE: Amount thresholds are in INR (Indian Rupees)
 function calculateRuleBasedScore(features: any): number {
   let score = 0;
 
-  // High amount for new customer
-  if (features.customer_total_transactions < 5 && features.amount > 500) {
+  // High amount for new customer - threshold in INR (₹40,000 ~ $500)
+  if (features.customer_total_transactions < 5 && features.amount > 40000) {
     score += 25;
   }
 
