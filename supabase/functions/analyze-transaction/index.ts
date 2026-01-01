@@ -367,6 +367,13 @@ async function evaluatePattern(
 ): Promise<number> {
   const { pattern_type, pattern_data } = pattern;
 
+  // NOTE: Most stored fraud pattern thresholds were originally tuned for USD.
+  // If the incoming transaction is in INR, we normalize amount-based comparisons to USD
+  // to avoid treating ₹ amounts like $ amounts.
+  const currency = (request.currency || 'USD').toUpperCase();
+  const normalizeAmountToUsd = (amount: number) => (currency === 'INR' ? amount / 83 : amount);
+  const requestAmountUsd = normalizeAmountToUsd(request.amount);
+
   switch (pattern_type) {
     case 'velocity_check': {
       // Check transaction velocity
@@ -379,12 +386,17 @@ async function evaluatePattern(
 
       if (recentTxs) {
         const txCount = recentTxs.length;
-        const totalAmount = recentTxs.reduce((sum: number, tx: any) => sum + parseFloat(tx.amount), 0);
+
+        // Transactions table might store amounts as number or string depending on DB typing
+        const totalAmountUsd = recentTxs.reduce((sum: number, tx: any) => {
+          const amt = typeof tx.amount === 'number' ? tx.amount : parseFloat(tx.amount);
+          return sum + normalizeAmountToUsd(Number.isFinite(amt) ? amt : 0);
+        }, 0);
 
         if (txCount >= pattern_data.max_transactions_per_hour) {
           return 20; // High velocity penalty
         }
-        if (totalAmount >= pattern_data.max_amount_per_hour) {
+        if (totalAmountUsd >= pattern_data.max_amount_per_hour) {
           return 25; // High amount velocity
         }
       }
@@ -429,7 +441,7 @@ async function evaluatePattern(
 
     case 'new_customer_high_value': {
       // New customer with high transaction
-      if (customerProfile.total_transactions === 0 && request.amount > pattern_data.threshold_amount) {
+      if (customerProfile.total_transactions === 0 && requestAmountUsd > pattern_data.threshold_amount) {
         return 20;
       }
       return 0;
