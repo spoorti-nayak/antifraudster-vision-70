@@ -35,6 +35,53 @@ export default function Checkout() {
   const { items, totalPrice, clearCart } = useCart();
   const { addTransaction, addAlert } = useSimulation();
   const [processing, setProcessing] = useState(false);
+  const [mlStatus, setMlStatus] = useState<'idle' | 'checking' | 'connected' | 'fallback'>('idle');
+
+  // Local ML API configuration - only works in local dev (VS Code + localhost)
+  const localMlBaseUrl = 'http://localhost:8000';
+  const canCallLocalMl = typeof window !== 'undefined' && 
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+  // Build features object for ML model
+  const buildMlFeatures = async (email: string, amount: number) => {
+    const recentTxns = JSON.parse(localStorage.getItem('simulated_transactions') || '[]');
+    const customerTxns = recentTxns.filter((t: any) => t.customer_email === email);
+    const avgAmount = customerTxns.length > 0
+      ? customerTxns.reduce((sum: number, t: any) => sum + t.amount, 0) / customerTxns.length
+      : 0;
+    const last1h = recentTxns.filter((t: any) => Date.now() - new Date(t.created_at).getTime() < 3600000);
+    
+    return {
+      amount,
+      customer_total_transactions: customerTxns.length,
+      customer_trust_score: Math.min(100, 50 + customerTxns.length * 10),
+      customer_average_transaction: avgAmount,
+      hour_of_day: new Date().getHours(),
+      day_of_week: new Date().getDay(),
+      transaction_velocity_1h: last1h.length,
+      location_distance_km: 0,
+    };
+  };
+
+  // Call local Flask ML API
+  const callLocalMlApi = async (features: any) => {
+    const response = await fetch(`${localMlBaseUrl}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ features }),
+    });
+    if (!response.ok) throw new Error(`ML API error: ${response.status}`);
+    return response.json();
+  };
+
+  // Normalize ML prediction to checkout format
+  const normalizeMlPredictionForCheckout = (prediction: any) => ({
+    fraud_score: prediction.fraud_score ?? 0,
+    status: prediction.is_fraud ? 'blocked' : prediction.fraud_score >= 40 ? 'flagged' : 'approved',
+    risk_level: prediction.risk_level || 'low',
+    reasons: prediction.explanation?.top_factors?.map((f: any) => f.description) || [],
+    model_used: prediction.model_used,
+  });
 
   const form = useForm<CheckoutForm>({
     resolver: zodResolver(checkoutSchema),
