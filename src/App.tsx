@@ -26,6 +26,8 @@ import Cart from "./pages/Cart";
 import Checkout from "./pages/Checkout";
 import StoreSettings from "./pages/StoreSettings";
 import TransactionSimulator from "./pages/TransactionSimulator";
+import EcommerceLogin from "./pages/EcommerceLogin";
+import EcommerceDashboard from "./pages/EcommerceDashboard";
 
 const queryClient = new QueryClient();
 
@@ -61,6 +63,10 @@ const App = () => (
                 <Route path="/cart" element={<Cart />} />
                 <Route path="/checkout" element={<Checkout />} />
                 <Route path="/store-settings" element={<StoreSettings />} />
+                
+                {/* E-Commerce Customer Portal */}
+                <Route path="/ecommerce/login" element={<EcommerceLogin />} />
+                <Route path="/ecommerce/dashboard" element={<EcommerceDashboard />} />
                 
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
