@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useCart } from '@/contexts/CartContext';
 import { useSimulation } from '@/contexts/SimulationContext';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -134,22 +135,43 @@ export default function Checkout() {
         }
       };
 
-      console.log('Sending transaction for fraud analysis...');
-      const { data: fraudResult, error: fraudError } = await supabase.functions.invoke(
-        'analyze-transaction',
-        { body: transactionData }
-      );
+      let fraudResult: any = null;
+      let fraudError: any = null;
+
+      // Local dev: call the Flask ML server directly (it runs on your machine).
+      // Backend functions cannot reach your PC's localhost unless you expose it.
+      if (canCallLocalMl) {
+        setMlStatus('checking');
+        try {
+          const features = await buildMlFeatures(data.email, totalPrice);
+          console.log(`🤖 Calling local ML API at ${localMlBaseUrl}/predict`, features);
+          const prediction = await callLocalMlApi(features);
+          fraudResult = normalizeMlPredictionForCheckout(prediction);
+          setMlStatus('connected');
+          console.log('✅ Local ML prediction:', fraudResult);
+        } catch (err: any) {
+          setMlStatus('fallback');
+          console.warn('⚠️ Local ML API unavailable; falling back to backend fraud detection.', err);
+        }
+      }
+
+      if (!fraudResult) {
+        console.log('Sending transaction for fraud analysis...');
+        const result = await supabase.functions.invoke('analyze-transaction', { body: transactionData });
+        fraudResult = result.data;
+        fraudError = result.error;
+      }
 
       if (fraudError) {
         console.error('Fraud check error:', fraudError);
-        
+
         // Calculate local fraud score with breakdown
         const fraudAnalysis = calculateLocalFraudScore(totalPrice, items, data);
         const fraudScore = fraudAnalysis.score;
-        const status: 'pending' | 'approved' | 'flagged' | 'blocked' = 
+        const status: 'pending' | 'approved' | 'flagged' | 'blocked' =
           fraudScore > 70 ? 'blocked' : fraudScore > 40 ? 'flagged' : 'approved';
         const riskLevel = fraudScore > 70 ? 'high' : fraudScore > 40 ? 'medium' : 'low';
-        
+
         // Add transaction to simulation context with breakdown
         const simulatedTransaction = {
           id: `txn_${Date.now()}`,
@@ -161,16 +183,16 @@ export default function Checkout() {
           risk_level: riskLevel,
           fraud_reasons: fraudAnalysis.fraudReasons.length > 0 ? fraudAnalysis.fraudReasons : null,
           created_at: new Date().toISOString(),
-          metadata: { 
+          metadata: {
             order_id: order.id,
             card_last4: data.cardNumber.slice(-4),
             from_checkout: true,
             fraud_check_unavailable: true,
-            risk_breakdown: fraudAnalysis.breakdown
-          }
+            risk_breakdown: fraudAnalysis.breakdown,
+          },
         };
         addTransaction(simulatedTransaction);
-        
+
         // Create fraud alert if needed
         if (status === 'flagged' || status === 'blocked') {
           const severity: 'low' | 'medium' | 'high' | 'critical' = status === 'blocked' ? 'high' : 'medium';
@@ -181,45 +203,39 @@ export default function Checkout() {
             alert_type: status === 'blocked' ? 'payment_blocked' : 'suspicious_activity',
             severity: severity,
             message: `Checkout payment ${status} - Fraud Score: ${fraudScore}%`,
-            details: { 
-              fraud_score: fraudScore, 
+            details: {
+              fraud_score: fraudScore,
               reasons: fraudAnalysis.fraudReasons,
               amount: totalPrice,
               quantity: items.reduce((sum, item) => sum + item.quantity, 0),
-              risk_breakdown: fraudAnalysis.breakdown
+              risk_breakdown: fraudAnalysis.breakdown,
             },
             is_resolved: false,
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
           };
           addAlert(simulatedAlert);
         }
-        
+
         if (status === 'blocked') {
           toast.error(
             `⛔ Payment Blocked - Fraud Detected!\n\nFraud Score: ${fraudScore}%\n\n${fraudAnalysis.fraudReasons.join('\n')}`,
-            { duration: 10000 }
+            { duration: 10000 },
           );
-          await (supabase as any)
-            .from('orders')
-            .update({ status: 'blocked', fraud_score: fraudScore / 100 })
-            .eq('id', order.id);
+          await (supabase as any).from('orders').update({ status: 'blocked', fraud_score: fraudScore / 100 }).eq('id', order.id);
           navigate('/shop');
           return;
         }
-        
+
         if (status === 'flagged') {
           toast.warning(
             `⚠️ Payment Flagged for Review\n\nFraud Score: ${fraudScore}%\n\nReasons:\n${fraudAnalysis.fraudReasons.slice(0, 2).join('\n')}`,
-            { duration: 8000 }
+            { duration: 8000 },
           );
         }
-        
+
         toast.success('Order placed successfully!');
-        await (supabase as any)
-          .from('orders')
-          .update({ status: 'completed', fraud_score: 0 })
-          .eq('id', order.id);
-        
+        await (supabase as any).from('orders').update({ status: 'completed', fraud_score: 0 }).eq('id', order.id);
+
         clearCart();
         navigate('/shop');
         return;
@@ -516,7 +532,27 @@ export default function Checkout() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Lock className="h-5 w-5" />
-                Secure Checkout
+                <span>Secure Checkout</span>
+                {canCallLocalMl && (
+                  <Badge
+                    className="ml-auto"
+                    variant={
+                      mlStatus === 'connected'
+                        ? 'default'
+                        : mlStatus === 'fallback'
+                          ? 'secondary'
+                          : 'outline'
+                    }
+                  >
+                    {mlStatus === 'checking'
+                      ? 'ML: checking...'
+                      : mlStatus === 'connected'
+                        ? 'ML: connected'
+                        : mlStatus === 'fallback'
+                          ? 'ML: fallback'
+                          : 'ML: local'}
+                  </Badge>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent>
