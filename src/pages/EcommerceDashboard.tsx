@@ -2,8 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   ShoppingBag, User, CreditCard, MapPin, Clock, Shield, 
-  TrendingUp, AlertTriangle, CheckCircle, XCircle, LogOut,
-  ChevronRight
+  AlertTriangle, CheckCircle, XCircle, LogOut, Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -12,18 +11,20 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
-interface EcommerceCustomer {
+interface CustomerProfile {
   id: string;
-  email: string;
-  name: string;
-  phone: string;
-  city: string;
-  country: string;
+  user_id: string;
+  full_name: string;
+  phone: string | null;
+  home_city: string;
+  home_country: string;
   trust_score: number;
   total_transactions: number;
   average_transaction_amount: number;
   average_purchase_hour: number;
+  avg_time_to_buy_seconds: number;
   is_blocked: boolean;
+  customer_type: string;
   created_at: string;
 }
 
@@ -35,67 +36,109 @@ interface Transaction {
   fraud_score: number;
   status: string;
   risk_level: string;
+  case_label: string | null;
+  time_to_buy_seconds: number | null;
   purchase_hour: number;
   ip_address: string;
-  city: string;
-  country: string;
+  location_city: string;
+  location_country: string;
   device_fingerprint: string;
   risk_factors: string[];
   ml_model_used: string;
+  velocity_1h: number;
   created_at: string;
 }
 
 const EcommerceDashboard = () => {
-  const [customer, setCustomer] = useState<EcommerceCustomer | null>(null);
+  const [profile, setProfile] = useState<CustomerProfile | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userEmail, setUserEmail] = useState<string>("");
   const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
-    const storedCustomer = localStorage.getItem("ecommerce_customer");
-    if (!storedCustomer) {
-      navigate("/ecommerce/login");
-      return;
-    }
+    checkAuthAndLoad();
 
-    const customerData = JSON.parse(storedCustomer);
-    setCustomer(customerData);
-    fetchTransactions(customerData.id);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        navigate("/ecommerce/login");
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [navigate]);
 
-  const fetchTransactions = async (customerId: string) => {
+  const checkAuthAndLoad = async () => {
     try {
-      // Cast for new table not yet in types
-      const { data, error } = await (supabase as any)
-        .from("ecommerce_customer_transactions")
-        .select("*")
-        .eq("customer_id", customerId)
-        .order("created_at", { ascending: false });
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        navigate("/ecommerce/login");
+        return;
+      }
 
-      if (error) throw error;
-      
-      // Parse risk_factors from JSONB
-      const parsedTransactions = (data || []).map((t: any) => ({
-        ...t,
-        risk_factors: Array.isArray(t.risk_factors) ? t.risk_factors : JSON.parse(t.risk_factors || '[]')
-      }));
-      
-      setTransactions(parsedTransactions as Transaction[]);
+      setUserEmail(session.user.email || "");
+      await loadProfile(session.user.id);
+      await loadTransactions(session.user.id);
     } catch (err) {
-      console.error("Error fetching transactions:", err);
-      toast({
-        title: "Error",
-        description: "Failed to load transaction history",
-        variant: "destructive",
-      });
+      console.error("Auth check error:", err);
+      navigate("/ecommerce/login");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("ecommerce_customer");
+  const loadProfile = async (userId: string) => {
+    try {
+      const { data, error } = await (supabase as any)
+        .from("ecommerce_customer_profiles")
+        .select("*")
+        .eq("user_id", userId)
+        .single();
+
+      if (error) {
+        console.error("Profile load error:", error);
+        toast({
+          title: "Profile not found",
+          description: "Your e-commerce profile could not be loaded.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setProfile(data as unknown as CustomerProfile);
+    } catch (err) {
+      console.error("Error loading profile:", err);
+    }
+  };
+
+  const loadTransactions = async (userId: string) => {
+    try {
+      const { data, error } = await (supabase as any)
+        .from("ecommerce_transactions")
+        .select("*")
+        .eq("customer_user_id", userId)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Transactions load error:", error);
+        return;
+      }
+
+      const parsedTransactions = (data || []).map((t: any) => ({
+        ...t,
+        risk_factors: Array.isArray(t.risk_factors) ? t.risk_factors : JSON.parse(t.risk_factors || '[]')
+      }));
+
+      setTransactions(parsedTransactions as Transaction[]);
+    } catch (err) {
+      console.error("Error loading transactions:", err);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     navigate("/ecommerce/login");
   };
 
@@ -146,10 +189,24 @@ const EcommerceDashboard = () => {
     });
   };
 
-  if (loading || !customer) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="p-6 text-center">
+          <CardTitle className="mb-4">Profile Not Found</CardTitle>
+          <CardDescription className="mb-4">
+            Your e-commerce customer profile could not be loaded.
+          </CardDescription>
+          <Button onClick={() => navigate("/ecommerce/login")}>Back to Login</Button>
+        </Card>
       </div>
     );
   }
@@ -175,8 +232,8 @@ const EcommerceDashboard = () => {
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <div className="font-medium">{customer.name}</div>
-              <div className="text-xs text-muted-foreground">{customer.email}</div>
+              <div className="font-medium">{profile.full_name}</div>
+              <div className="text-xs text-muted-foreground">{userEmail}</div>
             </div>
             <Button variant="outline" size="sm" onClick={handleLogout}>
               <LogOut className="w-4 h-4 mr-2" />
@@ -201,22 +258,22 @@ const EcommerceDashboard = () => {
                 <div className="text-sm text-muted-foreground">Location</div>
                 <div className="font-medium flex items-center gap-1">
                   <MapPin className="w-4 h-4" />
-                  {customer.city}, {customer.country}
+                  {profile.home_city}, {profile.home_country}
                 </div>
               </div>
               <div>
                 <div className="text-sm text-muted-foreground">Total Transactions</div>
-                <div className="font-medium">{customer.total_transactions}</div>
+                <div className="font-medium">{profile.total_transactions}</div>
               </div>
               <div>
                 <div className="text-sm text-muted-foreground">Avg. Transaction</div>
-                <div className="font-medium">{formatCurrency(customer.average_transaction_amount)}</div>
+                <div className="font-medium">{formatCurrency(profile.average_transaction_amount)}</div>
               </div>
               <div>
-                <div className="text-sm text-muted-foreground">Usual Purchase Hour</div>
+                <div className="text-sm text-muted-foreground">Avg. Time to Buy</div>
                 <div className="font-medium flex items-center gap-1">
                   <Clock className="w-4 h-4" />
-                  {customer.average_purchase_hour}:00
+                  {Math.round(profile.avg_time_to_buy_seconds / 60)} min
                 </div>
               </div>
             </CardContent>
@@ -231,14 +288,14 @@ const EcommerceDashboard = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className={`text-5xl font-bold ${getTrustScoreColor(customer.trust_score)}`}>
-                {customer.trust_score}
+              <div className={`text-5xl font-bold ${getTrustScoreColor(profile.trust_score)}`}>
+                {profile.trust_score}
               </div>
-              <Progress value={customer.trust_score} className="mt-4" />
+              <Progress value={profile.trust_score} className="mt-4" />
               <p className="text-sm text-muted-foreground mt-2">
-                {customer.trust_score >= 80 ? "Excellent standing" :
-                 customer.trust_score >= 50 ? "Good standing" :
-                 customer.trust_score >= 30 ? "Needs attention" : "High risk account"}
+                {profile.trust_score >= 80 ? "Excellent standing" :
+                 profile.trust_score >= 50 ? "Good standing" :
+                 profile.trust_score >= 30 ? "Needs attention" : "High risk account"}
               </p>
             </CardContent>
           </Card>
@@ -293,7 +350,7 @@ const EcommerceDashboard = () => {
             <div className="space-y-4">
               {transactions.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  No transactions found
+                  No transactions found. Make your first purchase!
                 </div>
               ) : (
                 transactions.map((txn) => (
@@ -303,13 +360,18 @@ const EcommerceDashboard = () => {
                   >
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="flex-1">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-wrap">
                           <span className="font-mono text-sm">{txn.order_id}</span>
                           {getStatusBadge(txn.status)}
                           {getRiskBadge(txn.risk_level)}
+                          {txn.case_label && (
+                            <Badge variant="outline" className="text-xs">
+                              {txn.case_label}
+                            </Badge>
+                          )}
                         </div>
                         <div className="text-sm text-muted-foreground mt-1">
-                          {formatDate(txn.created_at)} • {txn.city}, {txn.country} • {txn.purchase_hour}:00
+                          {formatDate(txn.created_at)} • {txn.location_city}, {txn.location_country} • {txn.purchase_hour}:00
                         </div>
                       </div>
                       
@@ -342,6 +404,9 @@ const EcommerceDashboard = () => {
                     {/* ML Model Used */}
                     <div className="mt-2 text-xs text-muted-foreground">
                       Analyzed by: <span className="font-mono">{txn.ml_model_used || "rule_based"}</span>
+                      {txn.velocity_1h > 0 && (
+                        <span className="ml-3">• Velocity (1h): {txn.velocity_1h} txns</span>
+                      )}
                     </div>
                   </div>
                 ))
