@@ -1,71 +1,134 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Mail, Lock, ShoppingBag, User } from "lucide-react";
+import { Mail, Lock, ShoppingBag, User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
-interface EcommerceCustomer {
-  id: string;
-  email: string;
-  name: string;
-  city: string;
-  country: string;
-  trust_score: number;
-  total_transactions: number;
-}
-
 const EcommerceLogin = () => {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [city, setCity] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Demo accounts for quick login
-  const demoAccounts = [
-    { email: "priya.sharma@gmail.com", name: "Priya Sharma", type: "Trusted Regular", color: "text-green-500" },
-    { email: "amit.kumar@yahoo.com", name: "Amit Kumar", type: "New Customer", color: "text-yellow-500" },
-    { email: "raj.patel@hotmail.com", name: "Raj Patel", type: "Velocity Abuser", color: "text-red-500" },
-    { email: "sneha.reddy@gmail.com", name: "Sneha Reddy", type: "Location Hopper", color: "text-orange-500" },
-    { email: "vikram.singh@outlook.com", name: "Vikram Singh", type: "High-Value Buyer", color: "text-blue-500" },
-  ];
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      toast({ title: "Please fill all fields", variant: "destructive" });
+      return;
+    }
 
-  const handleLogin = async (customerEmail: string) => {
     setIsLoading(true);
     try {
-      // Fetch customer from ecommerce_customers table (cast for new table)
-      const { data: customer, error } = await (supabase as any)
-        .from("ecommerce_customers")
-        .select("*")
-        .eq("email", customerEmail)
-        .single();
-
-      if (error || !customer) {
-        toast({
-          title: "Customer not found",
-          description: "No e-commerce customer account found with this email.",
-          variant: "destructive",
-        });
-        setIsLoading(false);
-        return;
-      }
-
-      // Store customer in localStorage for session
-      localStorage.setItem("ecommerce_customer", JSON.stringify(customer));
-      
-      toast({
-        title: "Welcome back!",
-        description: `Logged in as ${customer.name}`,
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
-      navigate("/ecommerce/dashboard");
-    } catch (err) {
+      if (error) throw error;
+
+      if (data.session) {
+        // Check if user has an e-commerce profile
+        const { data: profile, error: profileError } = await (supabase as any)
+          .from("ecommerce_customer_profiles")
+          .select("*")
+          .eq("user_id", data.user.id)
+          .single();
+
+        if (profileError || !profile) {
+          toast({
+            title: "No e-commerce account",
+            description: "This account is not registered as an e-commerce customer. Please sign up.",
+            variant: "destructive",
+          });
+          await supabase.auth.signOut();
+          setIsLoading(false);
+          return;
+        }
+
+        toast({ title: "Welcome back!", description: `Logged in as ${(profile as any).full_name}` });
+        navigate("/ecommerce/dashboard");
+      }
+    } catch (err: any) {
+      console.error("Login error:", err);
       toast({
         title: "Login failed",
-        description: "An error occurred during login.",
+        description: err.message || "Invalid credentials",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password || !fullName) {
+      toast({ title: "Please fill all required fields", variant: "destructive" });
+      return;
+    }
+
+    if (password.length < 6) {
+      toast({ title: "Password must be at least 6 characters", variant: "destructive" });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/ecommerce/dashboard`,
+          data: {
+            full_name: fullName,
+            customer_type: "ecommerce",
+          },
+        },
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        // Create e-commerce customer profile
+        const { error: profileError } = await (supabase as any)
+          .from("ecommerce_customer_profiles")
+          .insert({
+            user_id: data.user.id,
+            full_name: fullName,
+            home_city: city || "Unknown",
+            home_country: "India",
+            trust_score: 50,
+            customer_type: "new",
+          });
+
+        if (profileError) {
+          console.error("Profile creation error:", profileError);
+          toast({
+            title: "Account created",
+            description: "Your account was created but profile setup failed. Please contact support.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Account created!",
+            description: "Welcome to the e-commerce platform.",
+          });
+          navigate("/ecommerce/dashboard");
+        }
+      }
+    } catch (err: any) {
+      console.error("Signup error:", err);
+      toast({
+        title: "Signup failed",
+        description: err.message || "An error occurred",
         variant: "destructive",
       });
     } finally {
@@ -82,73 +145,142 @@ const EcommerceLogin = () => {
             <ShoppingBag className="w-8 h-8 text-primary" />
           </div>
           <h1 className="text-3xl font-bold text-foreground">E-Commerce Portal</h1>
-          <p className="text-muted-foreground mt-2">Customer Login (Demo)</p>
+          <p className="text-muted-foreground mt-2">Customer Login</p>
         </div>
 
-        {/* Login Card */}
+        {/* Login/Signup Card */}
         <Card className="card-3d">
-          <CardHeader>
-            <CardTitle>Sign In</CardTitle>
-            <CardDescription>
-              Select a demo customer account to explore different fraud scenarios
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Email Input */}
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter customer email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
+          <CardContent className="pt-6">
+            <Tabs defaultValue="login" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="login">Sign In</TabsTrigger>
+                <TabsTrigger value="signup">Sign Up</TabsTrigger>
+              </TabsList>
 
-            <Button 
-              className="w-full gradient-primary" 
-              onClick={() => handleLogin(email)}
-              disabled={isLoading || !email}
-            >
-              {isLoading ? "Signing in..." : "Sign In"}
-            </Button>
-
-            {/* Divider */}
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">Or select a demo account</span>
-              </div>
-            </div>
-
-            {/* Demo Accounts */}
-            <div className="space-y-2">
-              {demoAccounts.map((account) => (
-                <Button
-                  key={account.email}
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3"
-                  onClick={() => handleLogin(account.email)}
-                  disabled={isLoading}
-                >
-                  <User className="mr-3 h-4 w-4" />
-                  <div className="text-left flex-1">
-                    <div className="font-medium">{account.name}</div>
-                    <div className="text-xs text-muted-foreground">{account.email}</div>
+              {/* Login Tab */}
+              <TabsContent value="login">
+                <form onSubmit={handleSignIn} className="space-y-4 mt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="login-email">Email</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="login-email"
+                        type="email"
+                        placeholder="you@example.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="pl-10"
+                        disabled={isLoading}
+                      />
+                    </div>
                   </div>
-                  <span className={`text-xs font-medium ${account.color}`}>
-                    {account.type}
-                  </span>
-                </Button>
-              ))}
-            </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="login-password">Password</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="login-password"
+                        type="password"
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="pl-10"
+                        disabled={isLoading}
+                      />
+                    </div>
+                  </div>
+
+                  <Button type="submit" className="w-full gradient-primary" disabled={isLoading}>
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Signing in...
+                      </>
+                    ) : (
+                      "Sign In"
+                    )}
+                  </Button>
+                </form>
+              </TabsContent>
+
+              {/* Signup Tab */}
+              <TabsContent value="signup">
+                <form onSubmit={handleSignUp} className="space-y-4 mt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-name">Full Name *</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-name"
+                        type="text"
+                        placeholder="Your full name"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        className="pl-10"
+                        disabled={isLoading}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-email">Email *</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-email"
+                        type="email"
+                        placeholder="you@example.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="pl-10"
+                        disabled={isLoading}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-city">City</Label>
+                    <Input
+                      id="signup-city"
+                      type="text"
+                      placeholder="Your city"
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      disabled={isLoading}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-password">Password *</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-password"
+                        type="password"
+                        placeholder="Min 6 characters"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="pl-10"
+                        disabled={isLoading}
+                      />
+                    </div>
+                  </div>
+
+                  <Button type="submit" className="w-full gradient-primary" disabled={isLoading}>
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creating account...
+                      </>
+                    ) : (
+                      "Create Account"
+                    )}
+                  </Button>
+                </form>
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
 
