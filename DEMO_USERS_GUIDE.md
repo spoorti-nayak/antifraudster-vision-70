@@ -297,6 +297,19 @@ The system displays these risk factors with explanations:
 
 ---
 
+## Data Flow: Checkout → Dashboard
+
+When a transaction is completed at checkout, the data flows to:
+
+1. **Dashboard** → Transaction Stream shows the transaction in real-time
+2. **Fraud Alerts** → If flagged/blocked, an alert appears
+3. **Transactions** → Full transaction history table
+4. **Analytics** → Stats updated (detection rate, avg score, etc.)
+
+All data is stored in browser memory via SimulationContext and persists per user session.
+
+---
+
 ## Troubleshooting
 
 ### Login Issues
@@ -313,6 +326,11 @@ The system displays these risk factors with explanations:
 - Verify `ecommerce_transactions` table exists
 - Check RLS policies allow inserts
 - Confirm user is authenticated
+
+### Data Not Appearing in Dashboard
+- Ensure you're logged in as a merchant (not e-commerce customer)
+- Complete a checkout to generate transaction data
+- Check browser console for errors
 
 ---
 
