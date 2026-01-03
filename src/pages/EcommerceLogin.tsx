@@ -54,7 +54,7 @@ const EcommerceLogin = () => {
         }
 
         toast({ title: "Welcome back!", description: `Logged in as ${(profile as any).full_name}` });
-        navigate("/ecommerce/dashboard");
+        navigate("/shop");
       }
     } catch (err: any) {
       console.error("Login error:", err);
@@ -86,7 +86,7 @@ const EcommerceLogin = () => {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/ecommerce/dashboard`,
+          emailRedirectTo: `${window.location.origin}/shop`,
           data: {
             full_name: fullName,
             customer_type: "ecommerce",
@@ -121,7 +121,7 @@ const EcommerceLogin = () => {
             title: "Account created!",
             description: "Welcome to the e-commerce platform.",
           });
-          navigate("/ecommerce/dashboard");
+          navigate("/shop");
         }
       }
     } catch (err: any) {

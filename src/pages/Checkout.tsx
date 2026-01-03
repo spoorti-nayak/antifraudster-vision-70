@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { ArrowLeft, CreditCard, Lock } from 'lucide-react';
+import { ArrowLeft, CreditCard, Lock, Brain, AlertTriangle, CheckCircle, XCircle, TrendingUp, TrendingDown } from 'lucide-react';
 
 const checkoutSchema = z.object({
   email: z.string().email(),
@@ -36,6 +36,15 @@ export default function Checkout() {
   const { addTransaction, addAlert } = useSimulation();
   const [processing, setProcessing] = useState(false);
   const [mlStatus, setMlStatus] = useState<'idle' | 'checking' | 'connected' | 'fallback'>('idle');
+  const [xaiResult, setXaiResult] = useState<{
+    show: boolean;
+    fraudScore: number;
+    status: 'approved' | 'flagged' | 'blocked';
+    riskLevel: string;
+    modelUsed: string;
+    topFactors: { feature: string; importance: number; direction: string; description: string }[];
+    summary: string;
+  } | null>(null);
 
   // Local ML API configuration - only works in local dev (VS Code + localhost)
   const localMlBaseUrl = 'http://localhost:8000';
@@ -74,14 +83,30 @@ export default function Checkout() {
     return response.json();
   };
 
-  // Normalize ML prediction to checkout format
-  const normalizeMlPredictionForCheckout = (prediction: any) => ({
-    fraud_score: prediction.fraud_score ?? 0,
-    status: prediction.is_fraud ? 'blocked' : prediction.fraud_score >= 40 ? 'flagged' : 'approved',
-    risk_level: prediction.risk_level || 'low',
-    reasons: prediction.explanation?.top_factors?.map((f: any) => f.description) || [],
-    model_used: prediction.model_used,
-  });
+  // Normalize ML prediction to checkout format and extract XAI data
+  const normalizeMlPredictionForCheckout = (prediction: any) => {
+    const normalized = {
+      fraud_score: prediction.fraud_score ?? 0,
+      status: prediction.is_fraud ? 'blocked' : prediction.fraud_score >= 40 ? 'flagged' : 'approved',
+      risk_level: prediction.risk_level || 'low',
+      reasons: prediction.explanation?.top_factors?.map((f: any) => f.description) || [],
+      model_used: prediction.model_used,
+      explanation: prediction.explanation,
+    };
+
+    // Set XAI result for display
+    setXaiResult({
+      show: true,
+      fraudScore: normalized.fraud_score,
+      status: normalized.status as 'approved' | 'flagged' | 'blocked',
+      riskLevel: normalized.risk_level,
+      modelUsed: prediction.model_used || 'ensemble',
+      topFactors: prediction.explanation?.top_factors || [],
+      summary: prediction.explanation?.summary || `Transaction analyzed with ${normalized.fraud_score}% fraud probability`,
+    });
+
+    return normalized;
+  };
 
   const form = useForm<CheckoutForm>({
     resolver: zodResolver(checkoutSchema),
@@ -773,6 +798,92 @@ export default function Checkout() {
               </div>
             </CardContent>
           </Card>
+
+          {/* XAI Results Panel */}
+          {xaiResult?.show && (
+            <Card className={`mt-4 border-2 ${
+              xaiResult.status === 'approved' ? 'border-green-500/50 bg-green-500/5' :
+              xaiResult.status === 'flagged' ? 'border-yellow-500/50 bg-yellow-500/5' :
+              'border-red-500/50 bg-red-500/5'
+            }`}>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Brain className="h-5 w-5" />
+                  ML Fraud Analysis (XAI)
+                  <Badge variant={
+                    xaiResult.status === 'approved' ? 'default' :
+                    xaiResult.status === 'flagged' ? 'secondary' : 'destructive'
+                  } className="ml-auto">
+                    {xaiResult.status === 'approved' && <CheckCircle className="h-3 w-3 mr-1" />}
+                    {xaiResult.status === 'flagged' && <AlertTriangle className="h-3 w-3 mr-1" />}
+                    {xaiResult.status === 'blocked' && <XCircle className="h-3 w-3 mr-1" />}
+                    {xaiResult.status.toUpperCase()}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Fraud Score */}
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Fraud Score</span>
+                  <span className={`text-2xl font-bold ${
+                    xaiResult.fraudScore < 30 ? 'text-green-500' :
+                    xaiResult.fraudScore < 60 ? 'text-yellow-500' : 'text-red-500'
+                  }`}>
+                    {xaiResult.fraudScore}%
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full transition-all duration-500 ${
+                      xaiResult.fraudScore < 30 ? 'bg-green-500' :
+                      xaiResult.fraudScore < 60 ? 'bg-yellow-500' : 'bg-red-500'
+                    }`}
+                    style={{ width: `${xaiResult.fraudScore}%` }}
+                  />
+                </div>
+
+                {/* Model Used */}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Model</span>
+                  <Badge variant="outline">{xaiResult.modelUsed}</Badge>
+                </div>
+
+                {/* Summary */}
+                <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
+                  {xaiResult.summary}
+                </p>
+
+                {/* Top Factors */}
+                {xaiResult.topFactors.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-semibold flex items-center gap-1">
+                      <TrendingUp className="h-4 w-4" />
+                      Key Risk Factors
+                    </h4>
+                    <div className="space-y-2">
+                      {xaiResult.topFactors.slice(0, 5).map((factor, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-xs">
+                          {factor.direction === 'increase' ? (
+                            <TrendingUp className="h-3 w-3 text-red-500" />
+                          ) : (
+                            <TrendingDown className="h-3 w-3 text-green-500" />
+                          )}
+                          <span className="flex-1 text-muted-foreground">{factor.description}</span>
+                          <Badge variant="outline" className={`text-xs ${
+                            factor.direction === 'increase' ? 'border-red-500/50 text-red-500' : 'border-green-500/50 text-green-500'
+                          }`}>
+                            {factor.importance > 0 ? '+' : ''}{(factor.importance * 100).toFixed(1)}%
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>
