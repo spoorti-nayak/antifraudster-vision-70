@@ -1,12 +1,10 @@
 import { useState, useEffect } from "react";
-import { AlertTriangle, Bell, BellOff, Eye, Settings } from "lucide-react";
+import { AlertTriangle, Bell, BellOff, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useVendor } from "@/contexts/VendorContext";
-import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -26,7 +24,6 @@ interface FraudAlert {
 
 const FraudAlerts = () => {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const { isConnected } = useVendor();
   const { user } = useAuth();
   const { toast } = useToast();
   const { alerts: simulatedAlerts } = useSimulation();
@@ -34,8 +31,8 @@ const FraudAlerts = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // If we have no backend connection or merchant, just use simulated alerts
-    if (!isConnected || !user?.merchantProfile?.id) {
+    // If we have no merchant, just use simulated alerts
+    if (!user?.merchantProfile?.id) {
       setAlerts(simulatedAlerts as FraudAlert[]);
       setLoading(false);
       return;
@@ -100,7 +97,7 @@ const FraudAlerts = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isConnected, user?.merchantProfile?.id, simulatedAlerts, toast]);
+  }, [user?.merchantProfile?.id, simulatedAlerts, toast]);
 
   const handleResolveAlert = async (alertId: string) => {
     try {
@@ -181,134 +178,116 @@ const FraudAlerts = () => {
       </div>
 
       {/* Detailed Alerts Table */}
-      {isConnected ? (
-        <Card className="card-3d">
-          <CardHeader>
-            <CardTitle>Fraud Alerts Management</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center py-16">
-                <p className="text-muted-foreground">Loading alerts...</p>
-              </div>
-            ) : alerts.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <AlertTriangle className="h-16 w-16 text-muted-foreground mb-4" />
-                <h3 className="text-xl font-semibold text-foreground mb-2">
-                  No Fraud Alerts
-                </h3>
-                <p className="text-muted-foreground max-w-md">
-                  No fraud alerts have been detected yet. Alerts will appear here when suspicious activity is identified.
-                </p>
-              </div>
-            ) : (
-              <ScrollArea className="h-[600px]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Alert ID</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Risk Level</TableHead>
-                      <TableHead>Message</TableHead>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {alerts.map((alert) => {
-                      const getRiskColor = () => {
-                        switch (alert.severity) {
-                          case 'high': return 'status-fraud';
-                          case 'medium': return 'status-suspicious';
-                          case 'low': return 'bg-muted text-muted-foreground';
-                        }
-                      };
-                      
-                      return (
-                        <TableRow key={alert.id}>
-                          <TableCell className="font-mono text-sm">
-                            {alert.id.slice(0, 8)}
-                          </TableCell>
-                          <TableCell>
-                            <span className="font-medium">{alert.alert_type}</span>
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={`${getRiskColor()} text-xs uppercase`}>
-                              {alert.severity}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="max-w-xs">
-                            <span className="text-sm truncate">{alert.message}</span>
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {new Date(alert.created_at).toLocaleString()}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center space-x-1">
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-6 w-6 p-0"
-                                onClick={() => {
-                              const alertDetails = {
-                                    alertId: alert.id.slice(0, 8),
-                                    transactionId: alert.transaction_id || 'N/A',
-                                    type: alert.alert_type,
-                                    severity: alert.severity.toUpperCase(),
-                                    message: alert.message,
-                                    details: JSON.stringify(alert.details, null, 2),
-                                    time: new Date(alert.created_at).toLocaleString()
-                                  };
-                                  
-                                  window.alert(`🚨 FRAUD ALERT DETAILS\n\n` +
-                                    `Alert ID: ${alertDetails.alertId}\n` +
-                                    `Transaction ID: ${alertDetails.transactionId}\n` +
-                                    `Type: ${alertDetails.type}\n` +
-                                    `Severity: ${alertDetails.severity}\n` +
-                                    `Message: ${alertDetails.message}\n` +
-                                    `Time: ${alertDetails.time}\n\n` +
-                                    `Details: ${alertDetails.details}`);
-                                }}
-                              >
-                                <Eye className="h-3 w-3" />
-                              </Button>
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-6 w-6 p-0"
-                                onClick={() => handleResolveAlert(alert.id)}
-                              >
-                                Resolve
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </ScrollArea>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="card-3d">
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <Settings className="h-16 w-16 text-muted-foreground mb-4" />
-            <h3 className="text-xl font-semibold text-foreground mb-2">
-              Connect Your Website to View Fraud Alerts
-            </h3>
-            <p className="text-muted-foreground mb-6 max-w-md">
-              To view fraud alerts and manage security notifications, you need to connect your website through the vendor integration.
-            </p>
-            <Button asChild className="gradient-primary">
-              <Link to="/vendors">
-                Set Up Integration
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+      {/* Always show alerts table - uses simulated data when backend unavailable */}
+      <Card className="card-3d">
+        <CardHeader>
+          <CardTitle>Fraud Alerts Management</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <p className="text-muted-foreground">Loading alerts...</p>
+            </div>
+          ) : alerts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <AlertTriangle className="h-16 w-16 text-muted-foreground mb-4" />
+              <h3 className="text-xl font-semibold text-foreground mb-2">
+                No Fraud Alerts
+              </h3>
+              <p className="text-muted-foreground max-w-md">
+                No fraud alerts have been detected yet. Complete a checkout to see alerts here.
+              </p>
+            </div>
+          ) : (
+            <ScrollArea className="h-[600px]">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Alert ID</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Risk Level</TableHead>
+                    <TableHead>Message</TableHead>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {alerts.map((alert) => {
+                    const getRiskColor = () => {
+                      switch (alert.severity) {
+                        case 'high': return 'status-fraud';
+                        case 'medium': return 'status-suspicious';
+                        case 'low': return 'bg-muted text-muted-foreground';
+                      }
+                    };
+                    
+                    return (
+                      <TableRow key={alert.id}>
+                        <TableCell className="font-mono text-sm">
+                          {alert.id.slice(0, 8)}
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-medium">{alert.alert_type}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={`${getRiskColor()} text-xs uppercase`}>
+                            {alert.severity}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="max-w-xs">
+                          <span className="text-sm truncate">{alert.message}</span>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {new Date(alert.created_at).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-1">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-6 w-6 p-0"
+                              onClick={() => {
+                                const alertDetails = {
+                                  alertId: alert.id.slice(0, 8),
+                                  transactionId: alert.transaction_id || 'N/A',
+                                  type: alert.alert_type,
+                                  severity: alert.severity.toUpperCase(),
+                                  message: alert.message,
+                                  details: JSON.stringify(alert.details, null, 2),
+                                  time: new Date(alert.created_at).toLocaleString()
+                                };
+                                
+                                window.alert(`🚨 FRAUD ALERT DETAILS\n\n` +
+                                  `Alert ID: ${alertDetails.alertId}\n` +
+                                  `Transaction ID: ${alertDetails.transactionId}\n` +
+                                  `Type: ${alertDetails.type}\n` +
+                                  `Severity: ${alertDetails.severity}\n` +
+                                  `Message: ${alertDetails.message}\n` +
+                                  `Time: ${alertDetails.time}\n\n` +
+                                  `Details: ${alertDetails.details}`);
+                              }}
+                            >
+                              <Eye className="h-3 w-3" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-6 w-6 p-0"
+                              onClick={() => handleResolveAlert(alert.id)}
+                            >
+                              Resolve
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };
