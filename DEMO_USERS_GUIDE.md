@@ -4,58 +4,98 @@ This guide provides 5 demo users with specific fraud scenarios to demonstrate th
 
 ---
 
+## ⚠️ Important: Understanding the Auth System
+
+**The app uses Supabase Auth** - all users (merchants AND e-commerce customers) are stored in `auth.users`.
+
+### How Authentication Works:
+
+| Login Page | URL | Who Can Login |
+|------------|-----|---------------|
+| **Merchant/Antifraudster** | `/login` | Any user in `auth.users` (goes to dashboard) |
+| **E-Commerce Customer** | `/ecommerce/login` | Only users WITH a row in `ecommerce_customer_profiles` |
+
+### Key Point:
+- If you create a user in Supabase Auth **without** an `ecommerce_customer_profiles` row → They can ONLY login as merchant
+- If you create a user in Supabase Auth **with** an `ecommerce_customer_profiles` row → They can login at BOTH portals
+
+---
+
 ## Quick Setup
 
-### SQL to Create Demo Users (Run in Supabase SQL Editor)
+### Step 1: Create Auth Users in Supabase
+
+In Supabase Dashboard → **Authentication** → **Users** → **Add User**:
+
+| Email | Password | Purpose |
+|-------|----------|---------|
+| alice.trusted@demo.com | Demo@123 | Trusted customer (high trust score) |
+| bob.newuser@demo.com | Demo@123 | New customer (low history) |
+| charlie.velocity@demo.com | Demo@123 | Velocity abuser pattern |
+| diana.traveler@demo.com | Demo@123 | Location hopper/traveler |
+| eve.highvalue@demo.com | Demo@123 | Premium/high-value customer |
+
+> **Note:** Make sure to check "Auto Confirm User" when creating or enable auto-confirm in Auth settings.
+
+### Step 2: Create E-Commerce Profiles (Run in SQL Editor)
+
+**After creating auth users**, run this SQL to create their e-commerce customer profiles:
 
 ```sql
--- First, create auth users in Supabase Dashboard > Authentication > Users
--- Then run this to create their e-commerce profiles
-
--- Clear existing demo data
-DELETE FROM ecommerce_customer_profiles WHERE email IN (
-  'alice.trusted@demo.com',
-  'bob.newuser@demo.com', 
-  'charlie.velocity@demo.com',
-  'diana.traveler@demo.com',
-  'eve.highvalue@demo.com'
-);
-
 -- Demo User 1: Alice - Trusted Long-term Customer
-INSERT INTO ecommerce_customer_profiles (user_id, email, full_name, home_city, home_country, trust_score, total_transactions, average_transaction_amount, customer_type)
-SELECT id, 'alice.trusted@demo.com', 'Alice Sharma', 'Mumbai', 'India', 85, 47, 2500.00, 'trusted'
-FROM auth.users WHERE email = 'alice.trusted@demo.com';
+INSERT INTO ecommerce_customer_profiles (user_id, full_name, home_city, home_country, trust_score, total_transactions, average_transaction_amount, customer_type)
+SELECT id, 'Alice Sharma', 'Mumbai', 'India', 85, 47, 2500.00, 'trusted'
+FROM auth.users WHERE email = 'alice.trusted@demo.com'
+ON CONFLICT (user_id) DO NOTHING;
 
 -- Demo User 2: Bob - New Customer
-INSERT INTO ecommerce_customer_profiles (user_id, email, full_name, home_city, home_country, trust_score, total_transactions, average_transaction_amount, customer_type)
-SELECT id, 'bob.newuser@demo.com', 'Bob Patel', 'Delhi', 'India', 45, 2, 1200.00, 'new'
-FROM auth.users WHERE email = 'bob.newuser@demo.com';
+INSERT INTO ecommerce_customer_profiles (user_id, full_name, home_city, home_country, trust_score, total_transactions, average_transaction_amount, customer_type)
+SELECT id, 'Bob Patel', 'Delhi', 'India', 45, 2, 1200.00, 'new'
+FROM auth.users WHERE email = 'bob.newuser@demo.com'
+ON CONFLICT (user_id) DO NOTHING;
 
 -- Demo User 3: Charlie - Velocity Abuser Pattern
-INSERT INTO ecommerce_customer_profiles (user_id, email, full_name, home_city, home_country, trust_score, total_transactions, average_transaction_amount, customer_type)
-SELECT id, 'charlie.velocity@demo.com', 'Charlie Kumar', 'Bangalore', 'India', 35, 15, 800.00, 'suspicious'
-FROM auth.users WHERE email = 'charlie.velocity@demo.com';
+INSERT INTO ecommerce_customer_profiles (user_id, full_name, home_city, home_country, trust_score, total_transactions, average_transaction_amount, customer_type)
+SELECT id, 'Charlie Kumar', 'Bangalore', 'India', 35, 15, 800.00, 'suspicious'
+FROM auth.users WHERE email = 'charlie.velocity@demo.com'
+ON CONFLICT (user_id) DO NOTHING;
 
 -- Demo User 4: Diana - Location Hopper/Traveler
-INSERT INTO ecommerce_customer_profiles (user_id, email, full_name, home_city, home_country, trust_score, total_transactions, average_transaction_amount, customer_type)
-SELECT id, 'diana.traveler@demo.com', 'Diana Singh', 'Chennai', 'India', 60, 23, 4500.00, 'regular'
-FROM auth.users WHERE email = 'diana.traveler@demo.com';
+INSERT INTO ecommerce_customer_profiles (user_id, full_name, home_city, home_country, trust_score, total_transactions, average_transaction_amount, customer_type)
+SELECT id, 'Diana Singh', 'Chennai', 'India', 60, 23, 4500.00, 'regular'
+FROM auth.users WHERE email = 'diana.traveler@demo.com'
+ON CONFLICT (user_id) DO NOTHING;
 
 -- Demo User 5: Eve - High Value Customer (Potential Account Takeover Target)
-INSERT INTO ecommerce_customer_profiles (user_id, email, full_name, home_city, home_country, trust_score, total_transactions, average_transaction_amount, customer_type)
-SELECT id, 'eve.highvalue@demo.com', 'Eve Reddy', 'Hyderabad', 'India', 92, 89, 15000.00, 'premium'
-FROM auth.users WHERE email = 'eve.highvalue@demo.com';
+INSERT INTO ecommerce_customer_profiles (user_id, full_name, home_city, home_country, trust_score, total_transactions, average_transaction_amount, customer_type)
+SELECT id, 'Eve Reddy', 'Hyderabad', 'India', 92, 89, 15000.00, 'premium'
+FROM auth.users WHERE email = 'eve.highvalue@demo.com'
+ON CONFLICT (user_id) DO NOTHING;
 ```
 
-### Create Auth Users First
-In Supabase Dashboard → Authentication → Users → Add User:
-| Email | Password |
-|-------|----------|
-| alice.trusted@demo.com | Demo@123 |
-| bob.newuser@demo.com | Demo@123 |
-| charlie.velocity@demo.com | Demo@123 |
-| diana.traveler@demo.com | Demo@123 |
-| eve.highvalue@demo.com | Demo@123 |
+### Step 3: Verify Setup
+
+Run this query to confirm profiles were created:
+
+```sql
+SELECT 
+  u.email,
+  p.full_name,
+  p.trust_score,
+  p.customer_type,
+  p.total_transactions
+FROM auth.users u
+JOIN ecommerce_customer_profiles p ON p.user_id = u.id
+WHERE u.email LIKE '%demo.com';
+```
+
+---
+
+## Alternative: The Old Seed File (NOT Recommended)
+
+The `sql/ecommerce_users_seed.sql` file creates a **separate** `ecommerce_customers` table with password hashes. This is a **standalone system** that is NOT connected to the current app's authentication flow.
+
+**Don't use it** - the app expects users in `auth.users` with profiles in `ecommerce_customer_profiles`.
 
 ---
 
@@ -316,6 +356,12 @@ All data is stored in browser memory via SimulationContext and persists per user
 - Ensure user exists in Supabase Auth (Dashboard → Authentication)
 - Verify profile exists in `ecommerce_customer_profiles`
 - Check password is correct (`Demo@123`)
+- **E-commerce login fails?** User needs an `ecommerce_customer_profiles` row
+
+### Can a user login to BOTH portals?
+- **Yes** - If they have an `ecommerce_customer_profiles` row, they can use both:
+  - `/login` → Goes to merchant dashboard
+  - `/ecommerce/login` → Goes to shop
 
 ### Fraud Score Not Showing
 - Ensure ML API is running (`python ml_models/api_server.py`)
@@ -334,5 +380,15 @@ All data is stored in browser memory via SimulationContext and persists per user
 
 ---
 
+## Files Reference
+
+| File | Purpose | Use? |
+|------|---------|------|
+| `sql/ecommerce_auth_migration.sql` | Creates `ecommerce_customer_profiles` + `ecommerce_transactions` linked to Supabase Auth | ✅ **Required** |
+| `sql/ecommerce_users_seed.sql` | Creates standalone `ecommerce_customers` table (NOT linked to auth) | ❌ **Don't use** |
+| This guide (Step 2 SQL) | Creates profiles for auth users | ✅ **Required for demo users** |
+
+---
+
 **Last Updated:** January 2025  
-**Version:** 1.0
+**Version:** 2.0
