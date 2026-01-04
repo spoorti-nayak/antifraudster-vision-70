@@ -468,13 +468,14 @@ export default function Checkout() {
     const breakdown: { factor: string; contribution: number; reason: string }[] = [];
     const fraudReasons: string[] = [];
     
-    // Amount-based scoring (max 40 points) - thresholds in INR
-    // Typical INR thresholds: ₹150,000+ very high, ₹75,000+ high, ₹40,000+ medium, ₹15,000+ low
+    // Amount-based scoring (max 50 points) - thresholds in INR
+    // Lower thresholds for more sensitive fraud detection
     let amountScore = 0;
-    if (amount > 150000) { amountScore = 40; fraudReasons.push(`Very high amount: ₹${amount.toLocaleString('en-IN')}`); }
-    else if (amount > 75000) { amountScore = 25; fraudReasons.push(`High amount: ₹${amount.toLocaleString('en-IN')}`); }
-    else if (amount > 40000) { amountScore = 15; }
-    else if (amount > 15000) { amountScore = 5; }
+    if (amount > 100000) { amountScore = 50; fraudReasons.push(`Very high amount: ₹${amount.toLocaleString('en-IN')}`); }
+    else if (amount > 50000) { amountScore = 35; fraudReasons.push(`High amount: ₹${amount.toLocaleString('en-IN')}`); }
+    else if (amount > 25000) { amountScore = 25; fraudReasons.push(`Elevated amount: ₹${amount.toLocaleString('en-IN')}`); }
+    else if (amount > 10000) { amountScore = 15; }
+    else if (amount > 5000) { amountScore = 8; }
     if (amountScore > 0) breakdown.push({ factor: 'Transaction Amount', contribution: amountScore, reason: `₹${amount.toLocaleString('en-IN')}` });
     
     // Quantity-based scoring (max 35 points)
@@ -511,19 +512,19 @@ export default function Checkout() {
       breakdown.push({ factor: 'Geolocation Risk', contribution: geoScore, reason: `${formData.country}` });
     }
     
-    // Customer risk profile (max 15 points) - first-time vs returning customer
+    // Customer risk profile (max 25 points) - first-time vs returning customer
     let profileScore = 0;
     const customerHistory = recentTxns.filter((t: any) => t.customer_email === formData.email);
     if (customerHistory.length === 0) {
-      profileScore = 15;
+      profileScore = 25;
       fraudReasons.push('First-time customer with no purchase history');
       breakdown.push({ factor: 'Customer Profile', contribution: profileScore, reason: 'First-time buyer' });
     } else if (customerHistory.length === 1) {
-      profileScore = 8;
+      profileScore = 12;
       breakdown.push({ factor: 'Customer Profile', contribution: profileScore, reason: 'New customer' });
     } else {
       // Returning customer with good history reduces risk
-      profileScore = -5;
+      profileScore = -10;
       breakdown.push({ factor: 'Customer Profile', contribution: 0, reason: 'Trusted customer' });
     }
     
