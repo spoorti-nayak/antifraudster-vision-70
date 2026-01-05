@@ -11,9 +11,14 @@ import { supabase } from "@/integrations/supabase/client";
 
 const Vendors = () => {
   const [searchQuery, setSearchQuery] = useState("");
-  const { user } = useAuth();
+  const { user, refreshAuth } = useAuth();
   const [requestCount, setRequestCount] = useState(0);
-  const isConnected = !!(user?.merchantProfile?.api_key && user?.merchantProfile?.domain);
+  const isConnected = !!(user?.merchantProfile?.api_key && user?.merchantProfile?.domain && user?.merchantProfile?.domain.trim() !== '');
+
+  // Refresh auth on mount to ensure we have latest profile data
+  useEffect(() => {
+    refreshAuth();
+  }, []);
 
   useEffect(() => {
     if (!user?.merchantProfile?.id) return;

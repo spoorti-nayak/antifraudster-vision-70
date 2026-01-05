@@ -116,13 +116,16 @@ const VendorIntegration = () => {
 
       if (error) throw error;
 
-      // Refresh auth context to update the parent page
+      // Refresh auth context to update the parent page and VendorContext
       await refreshAuth();
+      
+      // Wait a moment for state to propagate then check again
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Only set connected if API key is also generated
       if (apiKey && apiKey.trim() !== '') {
         setIsConnected(true);
-        toast.success("Website connected! Now add the integration code to your site.");
+        toast.success("Website connected! Integration status updated.");
       } else {
         toast.success("Website URL saved! Generate an API key to complete the connection.");
       }
